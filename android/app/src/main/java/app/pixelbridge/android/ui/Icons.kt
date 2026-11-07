@@ -86,5 +86,6 @@ object PbIcons {
     val Unlink = icon("unlink", "M9 17H7A5 5 0 0 1 7 7", "M15 7h2a5 5 0 0 1 4 8", "M8 12h4", "m2 2 20 20")
     val Trash = icon("trash", "M3 6h18", "M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6", "M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2")
     val Download = icon("download", "M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4", "m7 10 5 5 5-5", "M12 15V3")
+    val Plus = icon("plus", "M5 12h14", "M12 5v14")
     val Info = icon("info", circle(12f, 12f, 10f), "M12 16v-4", "M12 8h.01")
 }

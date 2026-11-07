@@ -60,6 +60,9 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import app.pixelbridge.android.BridgeState
 import app.pixelbridge.android.History
+import app.pixelbridge.android.PairedMac
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
 
 class HomeActions(
     val sendClipboard: () -> Unit,
@@ -84,6 +87,8 @@ class HomeActions(
     val setCallAlerts: (Boolean) -> Unit,
     val requestSms: () -> Unit,
     val requestAnswerCalls: () -> Unit,
+    val switchMac: (String) -> Unit,
+    val forgetMac: (PairedMac) -> Unit,
 )
 
 /** What the settings screen needs to know about each feature's permissions and switches. */
@@ -168,6 +173,8 @@ fun HomeScreen(
     state: BridgeState,
     macName: String,
     history: List<History.Entry>,
+    macs: List<PairedMac>,
+    currentMacId: String?,
     actions: HomeActions,
 ) {
     val c = BridgeTheme.colors
@@ -193,6 +200,8 @@ fun HomeScreen(
                 ActionTile(PbIcons.Send, "Send files", connected, actions.sendFiles, Modifier.weight(1f))
             }
             Spacer(Modifier.height(22.dp))
+            PairedDevicesCard(macs, currentMacId, state, actions)
+            Spacer(Modifier.height(14.dp))
             RecentCard(history, actions)
             Spacer(Modifier.height(24.dp))
         }
@@ -307,6 +316,52 @@ private fun HistoryRow(e: History.Entry, onClick: () -> Unit) {
         }
         Spacer(Modifier.width(10.dp))
         LineIcon(if (e.incoming) PbIcons.ArrowDownLeft else PbIcons.ArrowUpRight, 16.dp, c.muted)
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun PairedDevicesCard(macs: List<PairedMac>, currentId: String?, state: BridgeState, actions: HomeActions) {
+    val c = BridgeTheme.colors
+    Outlined(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(vertical = 8.dp)) {
+            Text("Paired devices", style = MaterialTheme.typography.bodyLarge, color = c.text,
+                modifier = Modifier.padding(start = 18.dp, top = 8.dp, bottom = 6.dp))
+            macs.forEach { mac ->
+                val connected = mac.id == currentId && state is BridgeState.Connected
+                val status = when {
+                    connected -> "Connected"
+                    mac.id == currentId || (currentId == null && state is BridgeState.Connecting) -> "Connecting…"
+                    mac.lastConnected > 0 -> "Last connected ${ago(mac.lastConnected).replaceFirstChar { it.lowercase() }}"
+                    else -> "Not connected yet"
+                }
+                Row(
+                    Modifier.fillMaxWidth()
+                        .combinedClickable(onClick = { if (!connected) actions.switchMac(mac.id) },
+                            onLongClick = { actions.forgetMac(mac) })
+                        .padding(horizontal = 18.dp, vertical = 11.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    LineIcon(PbIcons.Laptop, 22.dp, if (connected) c.text else c.muted)
+                    Spacer(Modifier.width(16.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(mac.displayName, style = MaterialTheme.typography.bodyLarge, color = c.text,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(status, style = MaterialTheme.typography.bodySmall, color = c.muted)
+                    }
+                    if (connected) LineIcon(PbIcons.CheckCircle, 18.dp, c.text)
+                    else Text("Connect", style = MaterialTheme.typography.labelMedium, color = c.muted)
+                }
+            }
+            Row(Modifier.fillMaxWidth().clickable(onClick = actions.scanQr).padding(horizontal = 18.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically) {
+                LineIcon(PbIcons.Plus, 22.dp, c.text)
+                Spacer(Modifier.width(16.dp))
+                Text("Pair another Mac", style = MaterialTheme.typography.bodyLarge, color = c.text)
+            }
+            Text("Touch and hold a Mac to remove it.", style = MaterialTheme.typography.bodySmall, color = c.faint,
+                modifier = Modifier.padding(start = 18.dp, end = 18.dp, bottom = 8.dp))
+        }
     }
 }
 
@@ -577,6 +632,21 @@ fun AutoClipHelpDialog(onDismiss: () -> Unit) {
                 style = MaterialTheme.typography.bodyMedium)
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text("Got it", color = c.text) } },
+        shape = RoundedCornerShape(16.dp),
+        containerColor = c.card,
+    )
+}
+
+@Composable
+fun ForgetMacDialog(name: String, onDismiss: () -> Unit, onConfirm: () -> Unit) {
+    val c = BridgeTheme.colors
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Remove $name?", style = MaterialTheme.typography.titleLarge) },
+        text = { Text("This phone will stop connecting to it. You can pair it again any time from the Mac's menu.",
+            style = MaterialTheme.typography.bodyMedium) },
+        confirmButton = { TextButton(onClick = onConfirm) { Text("Remove", color = c.text) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel", color = c.muted) } },
         shape = RoundedCornerShape(16.dp),
         containerColor = c.card,
     )

@@ -28,6 +28,7 @@ import app.pixelbridge.android.ui.ConfirmPairDialog
 import app.pixelbridge.android.ui.AutoClipHelpDialog
 import app.pixelbridge.android.ui.EnterCodeDialog
 import app.pixelbridge.android.ui.FeatureState
+import app.pixelbridge.android.ui.ForgetMacDialog
 import app.pixelbridge.android.ui.HomeActions
 import app.pixelbridge.android.ui.HomeScreen
 import app.pixelbridge.android.ui.PairScreen
@@ -49,11 +50,13 @@ class MainActivity : ComponentActivity() {
     private var features by mutableStateOf(FeatureState())
     private var showAutoClipHelp by mutableStateOf(false)
     private var inSettings by mutableStateOf(false)
+    private var macs by mutableStateOf<List<PairedMac>>(emptyList())
+    private var currentMacId by mutableStateOf<String?>(null)
+    private var forgetCandidate by mutableStateOf<PairedMac?>(null)
 
     private val stateListener: (BridgeState) -> Unit = { s ->
         bridgeState = s
-        paired = Prefs.secret != null
-        macName = Prefs.macName ?: "Your Mac"
+        refreshMacs()
     }
     private val historyListener: (List<History.Entry>) -> Unit = { history = it }
 
@@ -80,7 +83,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         Bridge.init(this)
-        paired = Prefs.secret != null
+        refreshMacs()
         receiveClipboard = Prefs.receiveClipboard
 
         val actions = HomeActions(
@@ -93,7 +96,8 @@ class MainActivity : ComponentActivity() {
             enterCode = { showCodeDialog = true },
             reconnect = { Bridge.reconnect(); toast("Reconnecting…") },
             unpair = {
-                Prefs.unpair(); paired = false; Bridge.reconnect()
+                (Bridge.currentMacId ?: Prefs.preferredMac()?.id)?.let { Bridge.forget(it) }
+                refreshMacs(); if (!paired) inSettings = false
             },
             openReceived = ::openDownloads,
             addTile = ::addTile,
@@ -109,6 +113,8 @@ class MainActivity : ComponentActivity() {
             },
             setMirrorNotifications = { Prefs.mirrorNotifications = it; refreshFeatures() },
             setCallAlerts = { Prefs.callAlerts = it; refreshFeatures() },
+            switchMac = { id -> Bridge.switchTo(id); refreshMacs() },
+            forgetMac = { forgetCandidate = it },
             requestAnswerCalls = { answerPermission.launch(Manifest.permission.ANSWER_PHONE_CALLS) },
             requestSms = {
                 if (SmsStore.hasPermission(this)) toast("On your Mac: Link to Mac menu › Messages")
@@ -122,19 +128,23 @@ class MainActivity : ComponentActivity() {
                     BackHandler { inSettings = false }
                     SettingsScreen(bridgeState, macName, receiveClipboard, backgroundAllowed, history.isNotEmpty(), features, actions)
                 } else if (paired) {
-                    HomeScreen(bridgeState, macName, history, actions)
+                    HomeScreen(bridgeState, macName, history, macs, currentMacId, actions)
                 } else {
                     PairScreen(bridgeState, onScan = ::scanQr, onEnterCode = { showCodeDialog = true })
                 }
                 if (showCodeDialog) {
                     EnterCodeDialog(
-                        initialHost = Prefs.host.orEmpty(),
+                        initialHost = "",
                         onDismiss = { showCodeDialog = false },
                         onPair = { code, host -> showCodeDialog = false; pairWithCode(code, host) },
                     )
                 }
                 if (showAutoClipHelp) {
                     AutoClipHelpDialog(onDismiss = { showAutoClipHelp = false })
+                }
+                forgetCandidate?.let { mac ->
+                    ForgetMacDialog(mac.displayName, onDismiss = { forgetCandidate = null },
+                        onConfirm = { forgetCandidate = null; Bridge.forget(mac.id); refreshMacs() })
                 }
                 pendingPair?.let { info ->
                     ConfirmPairDialog(
@@ -181,6 +191,15 @@ class MainActivity : ComponentActivity() {
         super.onStop()
     }
 
+    /** Re-reads the paired Macs and which one is connected (called on every connection change). */
+    private fun refreshMacs() {
+        macs = Prefs.pairedMacs()
+        paired = macs.isNotEmpty()
+        currentMacId = Bridge.currentMacId
+        val shown = macs.firstOrNull { it.id == currentMacId } ?: Prefs.preferredMac()
+        macName = shown?.displayName ?: "Your Mac"
+    }
+
     private fun refreshFeatures() {
         features = FeatureState(
             autoClipAvailable = AutoClipboard.isAvailable(this),
@@ -225,10 +244,10 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun applyPairing(info: PairingInfo) {
-        Prefs.pair(info)
-        paired = true
-        macName = info.name ?: "Your Mac"
+        val mac = Prefs.addMac(info)
+        refreshMacs()
         BridgeService.start(this)
+        Bridge.switchTo(mac.id)
         Bridge.reconnect()
     }
 

@@ -5,6 +5,34 @@ import Network
 // Pretends to be the phone. Usage:
 //   bridge-test-client <PAIRING-CODE> [host] [port] [--text "hi"] [--file /path] [--wait seconds]
 var args = Array(CommandLine.arguments.dropFirst())
+
+// "--serve <name> <port> <seconds>": act as an extra Mac (own secret) so a phone can pair with two Macs.
+if args.first == "--serve" {
+    let name = args.count > 1 ? args[1] : "Test Mac"
+    let port = UInt16(args.count > 2 ? args[2] : "47821") ?? 47821
+    let seconds = Double(args.count > 3 ? args[3] : "120") ?? 120
+    let secret = Pairing.newSecret()
+    print("URI " + Pairing.uri(secret: secret, host: "10.0.2.2", port: port, name: name))
+    final class Server: PeerDelegate {
+        var peers: [Peer] = []
+        func peerDidBecomeReady(_ p: Peer) { print("SERVE ready \(p.remoteName)") }
+        func peer(_ p: Peer, didReceive m: Message) { print("SERVE recv \(m.type)") }
+        func peerDidClose(_ p: Peer, error: Error?) { print("SERVE closed") }
+    }
+    let server = Server()
+    let q = DispatchQueue(label: "serve")
+    let listener = try! NWListener(using: .tcp, on: NWEndpoint.Port(rawValue: port)!)
+    listener.newConnectionHandler = { c in
+        let p = Peer(connection: c, isServer: true, secret: secret, localName: name, platform: "mac", queue: q)
+        p.delegate = server
+        server.peers.append(p)
+        p.start()
+    }
+    listener.start(queue: q)
+    setvbuf(stdout, nil, _IOLBF, 0)
+    Thread.sleep(forTimeInterval: seconds)
+    exit(0)
+}
 // "--keyfile" reads the Mac app's stored secret directly (handy for local testing).
 if args.first == "--keyfile" {
     let url = FileManager.default.homeDirectoryForCurrentUser

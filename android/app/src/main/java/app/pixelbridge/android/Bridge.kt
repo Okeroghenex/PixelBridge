@@ -197,30 +197,33 @@ object Bridge {
     private fun runLoop() {
         var backoff = 1000L
         while (running) {
-            val secret = Prefs.secret
-            if (secret == null) {
+            val macs = orderedMacs()
+            if (macs.isEmpty()) {
                 setState(BridgeState.NotPaired)
                 waitWake(30_000)
                 continue
             }
-            val targets = candidates()
-            if (targets.isEmpty()) {
+            val found = discovery?.services ?: emptyMap()
+            val attempts = macs.flatMap { mac -> targetsFor(mac, found).map { mac to it } }
+            if (attempts.isEmpty()) {
                 setState(BridgeState.Searching)
                 discovery?.start()
                 waitWake(5_000)
                 continue
             }
-            var authFailed = false
-            for ((host, port) in targets) {
+            var authFailures = 0
+            for ((mac, target) in attempts) {
+                val (host, port) = target
                 val started = System.currentTimeMillis()
                 try {
-                    connectAndServe(host, port, secret)
+                    connectAndServe(host, port, mac)
                 } catch (e: AEADBadTagException) {
-                    authFailed = true
-                    Log.w(TAG, "auth failed at $host:$port")
+                    authFailures++
+                    Log.w(TAG, "auth failed for ${mac.displayName} at $host:$port")
                 } catch (e: Exception) {
-                    Log.i(TAG, "connection to $host:$port ended: $e")
+                    Log.i(TAG, "connection to ${mac.displayName} at $host:$port ended: $e")
                 }
+                currentMacId = null
                 if (!running) return
                 // Only a connection that actually lasted resets the backoff; quick drops slow us down.
                 if (state is BridgeState.Connected && System.currentTimeMillis() - started > 10_000) {
@@ -228,24 +231,48 @@ object Bridge {
                     break
                 }
             }
-            setState(if (authFailed) BridgeState.Error("Pairing code rejected — pair again") else BridgeState.Searching)
+            setState(if (authFailures == attempts.size) BridgeState.Error("Pairing code rejected — pair again")
+                     else BridgeState.Searching)
             discovery?.start()
             waitWake(backoff)
             backoff = (backoff * 2).coerceAtMost(15_000)
         }
     }
 
-    /** Bonjour-discovered address for the paired Mac first, then the last known address. */
-    private fun candidates(): List<Pair<String, Int>> {
+    /** The Mac you picked first, then the others, most recently used first. */
+    private fun orderedMacs(): List<PairedMac> {
+        val all = Prefs.pairedMacs()
+        val preferred = Prefs.preferredId
+        return all.filter { it.id == preferred } + all.filter { it.id != preferred }
+    }
+
+    /** Where to find a Mac: its Bonjour address, then the last address it was reached at. */
+    private fun targetsFor(mac: PairedMac, found: Map<String, Pair<String, Int>>): List<Pair<String, Int>> {
         val list = LinkedHashSet<Pair<String, Int>>()
-        val found = discovery?.services ?: emptyMap()
-        Prefs.macName?.let { found[it] }?.let { list.add(it) }
-        Prefs.host?.let { list.add(it to Prefs.port) }
-        found.values.forEach { list.add(it) } // other Macs running PixelBridge: auth decides
+        mac.name?.let { found[it] }?.let { list.add(it) }
+        mac.host?.let { list.add(it to mac.port) }
+        if (mac.name == null) found.values.forEach { list.add(it) } // name not learned yet: auth decides
         return list.toList()
     }
 
-    private fun connectAndServe(host: String, port: Int, secret: ByteArray) {
+    /** The Mac we're connected to right now, if any. */
+    @Volatile var currentMacId: String? = null
+        private set
+
+    /** Switch to another paired Mac (drops the current connection; the loop then tries it first). */
+    fun switchTo(id: String) {
+        Prefs.preferredId = id
+        if (currentMacId != id) reconnect()
+    }
+
+    /** Forget a Mac; disconnects first if it's the one we're connected to. */
+    fun forget(id: String) {
+        Prefs.removeMac(id)
+        if (currentMacId == id) reconnect() else wake()
+    }
+
+    private fun connectAndServe(host: String, port: Int, mac: PairedMac) {
+        val secret = mac.secret
         setState(BridgeState.Connecting("$host:$port"))
         val s = Socket()
         socket = s
@@ -269,9 +296,8 @@ object Bridge {
             if (hello.type != "hello") throw IOException("unexpected ${hello.type}")
             val macName = hello.header.optString("name", "Mac")
 
-            Prefs.host = host
-            Prefs.port = port
-            Prefs.macName = macName
+            Prefs.updateMac(mac.id, macName, host, port)
+            currentMacId = mac.id
             crypto = c
             out = output
             s.soTimeout = 60_000 // Mac answers our 20 s pings, so silence means the link is dead

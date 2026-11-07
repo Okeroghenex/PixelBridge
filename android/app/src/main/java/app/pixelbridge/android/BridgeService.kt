@@ -159,6 +159,6 @@ class BridgeService : Service() {
 class BootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         Prefs.init(context)
-        if (Prefs.secret != null) BridgeService.start(context)
+        if (Prefs.isPaired) BridgeService.start(context)
     }
 }
