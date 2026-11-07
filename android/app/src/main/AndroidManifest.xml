@@ -18,6 +18,8 @@
     <!-- SMS history on the Mac -->
     <uses-permission android:name="android.permission.READ_SMS" />
     <uses-permission android:name="android.permission.READ_CONTACTS" />
+    <!-- Answer calls from the Mac -->
+    <uses-permission android:name="android.permission.ANSWER_PHONE_CALLS" />
 
     <application
         android:allowBackup="false"

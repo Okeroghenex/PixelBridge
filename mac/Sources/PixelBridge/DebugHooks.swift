@@ -8,6 +8,7 @@ enum DebugHooks {
     static var lastCallKey: String?
 
     static var extra: [String: () -> Void] = [:]
+    static var answer: ((String) -> Void)?
 
     static func install(decline: @escaping (String) -> Void, openMessages: @escaping () -> Void,
                         reply: @escaping (String, String) -> Void) {
@@ -16,6 +17,7 @@ enum DebugHooks {
             let cmd = n.object as? String ?? ""
             if cmd == "snapshot" { snapshot(to: dir) }
             else if cmd == "decline", let k = lastCallKey { decline(k) }
+            else if cmd == "answer", let k = lastCallKey { answer?(k) }
             else if cmd == "messages" { openMessages() }
             else if let f = extra[cmd] { f() }
             else if cmd.hasPrefix("reply:"), let k = lastReplyKey { reply(k, String(cmd.dropFirst(6))) }

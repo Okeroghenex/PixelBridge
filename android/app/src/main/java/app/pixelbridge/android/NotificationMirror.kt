@@ -1,17 +1,22 @@
 package app.pixelbridge.android
 
+import android.Manifest
+import android.annotation.SuppressLint
+import android.app.ActivityOptions
 import android.app.Notification
 import android.app.Person
 import android.app.RemoteInput
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.os.Bundle
 import android.provider.Settings
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
+import android.telecom.TelecomManager
 import android.util.Log
 import java.io.ByteArrayOutputStream
 import java.util.concurrent.ConcurrentHashMap
@@ -25,7 +30,9 @@ class NotificationMirror : NotificationListenerService() {
     private val active = ConcurrentHashMap<String, StatusBarNotification>()
     private val lastSent = ConcurrentHashMap<String, String>()
     private val iconCache = ConcurrentHashMap<String, ByteArray>()
-    @Volatile private var ringingKey: String? = null
+    /** Key of the call notification we're tracking, and whether it has been picked up. */
+    @Volatile private var callKey: String? = null
+    @Volatile private var inCall = false
 
     override fun onListenerConnected() {
         instance = this
@@ -42,8 +49,9 @@ class NotificationMirror : NotificationListenerService() {
 
     override fun onNotificationRemoved(sbn: StatusBarNotification) {
         val key = sbn.key
-        if (key == ringingKey) {
-            ringingKey = null
+        if (key == callKey) {
+            callKey = null
+            inCall = false
             Bridge.sendEvent(Message.of("call", mapOf("state" to "ended", "key" to key)))
         }
         if (active.remove(key) != null) {
@@ -107,33 +115,50 @@ class NotificationMirror : NotificationListenerService() {
         val callType = ex.getInt("android.callType", 0) // 1 incoming, 2 ongoing, 3 screening
         val titles = n.actions.orEmpty().map { it.title?.toString().orEmpty().lowercase() }
         val ringing = callType == 1 || (callType == 0 && titles.any { "answer" in it || "decline" in it })
+        active[sbn.key] = sbn // keep the latest version so Answer / Hang up use current actions
+
         if (!ringing) {
-            if (ringingKey == sbn.key) {
-                ringingKey = null
-                Bridge.sendEvent(Message.of("call", mapOf("state" to "active", "key" to sbn.key)))
+            // An incoming call we were ringing for has been picked up (here or on the phone).
+            if (callKey != null && !inCall) {
+                inCall = true
+                callKey = sbn.key
+                Bridge.sendEvent(Message.of("call", mapOf(
+                    "state" to "active", "key" to sbn.key, "name" to callerName(ex),
+                    "canHangUp" to (declineAction(n) != null),
+                )))
             }
             return
         }
-        if (ringingKey == sbn.key) return
-        ringingKey = sbn.key
-        active[sbn.key] = sbn
+        if (callKey == sbn.key && !inCall) return
+        callKey = sbn.key
+        inCall = false
+        Bridge.sendEvent(Message.of("call", mapOf(
+            "state" to "ringing", "key" to sbn.key, "name" to callerName(ex),
+            "detail" to ex.getCharSequence(Notification.EXTRA_TEXT)?.toString().orEmpty(),
+            "canDecline" to (declineAction(n) != null),
+            "canAnswer" to (canAcceptDirectly() || answerAction(n) != null),
+        ), appIcon(sbn.packageName)))
+    }
+
+    private fun callerName(ex: Bundle): String {
         val person: Person? = if (android.os.Build.VERSION.SDK_INT >= 33)
             ex.getParcelable("android.callPerson", Person::class.java)
         else @Suppress("DEPRECATION") ex.getParcelable("android.callPerson")
-        val name = person?.name?.toString()
+        return person?.name?.toString()
             ?: ex.getCharSequence(Notification.EXTRA_TITLE)?.toString() ?: "Unknown caller"
-        val detail = ex.getCharSequence(Notification.EXTRA_TEXT)?.toString().orEmpty()
-        Bridge.sendEvent(Message.of("call", mapOf(
-            "state" to "ringing", "key" to sbn.key, "name" to name, "detail" to detail,
-            "canDecline" to (declineAction(n) != null),
-        ), appIcon(sbn.packageName)))
     }
 
     private fun declineAction(n: Notification): Notification.Action? =
         n.actions?.firstOrNull { a ->
             val t = a.title?.toString().orEmpty().lowercase()
-            "decline" in t || "reject" in t || "hang up" in t
+            "decline" in t || "reject" in t || "hang up" in t || "end call" in t
         }
+
+    private fun answerAction(n: Notification): Notification.Action? =
+        n.actions?.firstOrNull { a -> "answer" in a.title?.toString().orEmpty().lowercase() }
+
+    private fun canAcceptDirectly() =
+        checkSelfPermission(Manifest.permission.ANSWER_PHONE_CALLS) == PackageManager.PERMISSION_GRANTED
 
     // endregion
 
@@ -156,6 +181,31 @@ class NotificationMirror : NotificationListenerService() {
         try { cancelNotification(key) } catch (_: Exception) {}
     }
 
+    /**
+     * Picks up the ringing call on the phone. Uses Telecom directly when "Answer from Mac" is allowed
+     * (most reliable); otherwise presses the phone app's own Answer button.
+     */
+    @SuppressLint("MissingPermission")
+    fun answer(key: String): Boolean {
+        if (canAcceptDirectly()) {
+            try {
+                @Suppress("DEPRECATION")
+                getSystemService(TelecomManager::class.java).acceptRingingCall()
+                return true
+            } catch (e: Exception) { Log.w(TAG, "acceptRingingCall", e) }
+        }
+        val action = active[key]?.let { answerAction(it.notification) } ?: return false
+        return try {
+            val opts = if (android.os.Build.VERSION.SDK_INT >= 34) ActivityOptions.makeBasic()
+                .setPendingIntentBackgroundActivityStartMode(
+                    @Suppress("DEPRECATION") ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED).toBundle()
+            else null
+            action.actionIntent.send(this, 0, null, null, null, null, opts)
+            true
+        } catch (e: Exception) { Log.w(TAG, "answer", e); false }
+    }
+
+    /** Declines a ringing call, or hangs up an answered one. */
     fun decline(key: String): Boolean {
         val sbn = active[key] ?: return false
         val action = declineAction(sbn.notification) ?: return false

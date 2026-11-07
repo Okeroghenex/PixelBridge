@@ -47,6 +47,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         DebugHooks.install(decline: { [weak self] k in self?.phoneEvents.decline(key: k) },
                            openMessages: { [weak self] in self?.openMessages() },
                            reply: { [weak self] k, t in self?.phoneEvents.sendReply(key: k, text: t) })
+        DebugHooks.answer = { [weak self] k in self?.phoneEvents.answer(key: k) }
         DebugHooks.extra = ["setup": { [weak self] in self?.showSetup() },
                             "screen": { [weak self] in self?.showPhoneScreen() }]
         server.onStateChange = { [weak self] st in self?.update(state: st) }

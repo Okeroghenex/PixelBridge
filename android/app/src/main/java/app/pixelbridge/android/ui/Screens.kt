@@ -109,6 +109,7 @@ class HomeActions(
     val setMirrorNotifications: (Boolean) -> Unit,
     val setCallAlerts: (Boolean) -> Unit,
     val requestSms: () -> Unit,
+    val requestAnswerCalls: () -> Unit,
 )
 
 /** What the Mac-features card needs to know. */
@@ -119,6 +120,7 @@ data class FeatureState(
     val mirrorNotifications: Boolean = true,
     val callAlerts: Boolean = true,
     val smsGranted: Boolean = false,
+    val answerGranted: Boolean = false,
 )
 
 @Composable
@@ -470,6 +472,11 @@ private fun FeaturesCard(f: FeatureState, actions: HomeActions) {
                 SettingRow(Icons.Rounded.Call, c.greenTile, c.greenIcon, "Ring on Mac",
                     "Your Mac rings when a call comes in", onClick = { actions.setCallAlerts(!f.callAlerts) }) {
                     BridgeSwitch(f.callAlerts, actions.setCallAlerts)
+                }
+                if (f.callAlerts && !f.answerGranted) {
+                    Divider()
+                    SettingRow(Icons.Rounded.Call, c.greenTile, c.greenIcon, "Answer from Mac",
+                        "Pick up calls from your Mac", onClick = actions.requestAnswerCalls, badge = "Allow")
                 }
             } else {
                 SettingRow(Icons.Rounded.NotificationsActive, c.violetTile, c.violetIcon, "Notifications & calls",

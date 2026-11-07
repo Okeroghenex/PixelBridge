@@ -350,8 +350,16 @@ object Bridge {
                 sendEvent(Message.of("notif_reply_result", mapOf("key" to m.header.optString("key"), "ok" to ok)))
             }
             "notif_dismiss" -> NotificationMirror.instance?.dismiss(m.header.optString("key"))
-            "call_action" -> if (m.header.optString("action") == "decline") {
-                NotificationMirror.instance?.decline(m.header.optString("key"))
+            "call_action" -> {
+                val key = m.header.optString("key")
+                val action = m.header.optString("action")
+                val mirror = NotificationMirror.instance
+                val ok = when (action) {
+                    "answer" -> mirror?.answer(key)
+                    "decline", "hangup" -> mirror?.decline(key)
+                    else -> false
+                } ?: false
+                sendEvent(Message.of("call_action_result", mapOf("key" to key, "action" to action, "ok" to ok)))
             }
             "sms_threads_req" -> sendExec.execute {
                 val reply = if (!SmsStore.hasPermission(app)) Message.of("sms_threads", mapOf("error" to "permission"))

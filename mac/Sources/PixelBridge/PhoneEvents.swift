@@ -39,10 +39,11 @@ final class PhoneEvents: NSObject {
                                                   textInputButtonTitle: "Send", textInputPlaceholder: "Message")
         let dismiss = UNNotificationAction(identifier: "dismiss", title: "Clear on Phone", options: [])
         let decline = UNNotificationAction(identifier: "decline", title: "Decline", options: [.destructive])
+        let answer = UNNotificationAction(identifier: "answer", title: "Answer", options: [])
         UNUserNotificationCenter.current().setNotificationCategories([
             UNNotificationCategory(identifier: Self.replyCategory, actions: [reply, dismiss], intentIdentifiers: []),
             UNNotificationCategory(identifier: Self.messageCategory, actions: [dismiss], intentIdentifiers: []),
-            UNNotificationCategory(identifier: Self.callCategory, actions: [decline], intentIdentifiers: []),
+            UNNotificationCategory(identifier: Self.callCategory, actions: [answer, decline], intentIdentifiers: []),
         ])
     }
 
@@ -58,6 +59,7 @@ final class PhoneEvents: NSObject {
         case "notif_reply_result":
             if (m.header["ok"] as? Bool) == false { post(title: "Reply not sent", body: "The app on your phone didn't accept it.") }
         case "call": handleCall(m)
+        case "call_action_result": handleCallResult(m)
         case "sms_threads", "sms_messages": messages.handle(m)
         default: return false
         }
@@ -106,6 +108,7 @@ final class PhoneEvents: NSObject {
         }
         if let callKey = userInfo["callKey"] as? String {
             if actionIdentifier == "decline" { decline(key: callKey) }
+            else if actionIdentifier == "answer" { answer(key: callKey) }
             else if actionIdentifier == UNNotificationDefaultActionIdentifier { callPanel?.window?.orderFrontRegardless() }
             return true
         }
@@ -122,6 +125,8 @@ final class PhoneEvents: NSObject {
 
     // MARK: Calls
 
+    private var callModel: CallCardModel?
+
     private func handleCall(_ m: Message) {
         guard let key = m.string("key") else { return }
         switch m.string("state") {
@@ -131,52 +136,94 @@ final class PhoneEvents: NSObject {
             DebugHooks.lastCallKey = key
             let name = m.string("name") ?? "Unknown caller"
             let detail = m.string("detail") ?? ""
-            let icon = NSImage(data: m.body)
-            showCallPanel(key: key, name: name, detail: detail, icon: icon,
-                          canDecline: (m.header["canDecline"] as? Bool) ?? false)
+            let model = CallCardModel(key: key, name: name, detail: detail,
+                                      canAnswer: (m.header["canAnswer"] as? Bool) ?? false,
+                                      canDecline: (m.header["canDecline"] as? Bool) ?? false)
+            showCallPanel(model)
             if canNotify {
                 let c = UNMutableNotificationContent()
                 c.title = "\(name) is calling"
-                c.body = detail.isEmpty ? "Answer on your phone" : detail
+                c.body = detail.isEmpty ? "Incoming call on your phone" : detail
                 c.categoryIdentifier = Self.callCategory
                 c.userInfo = ["callKey": key]
                 c.interruptionLevel = .timeSensitive
                 UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "call:" + key, content: c, trigger: nil))
             }
-        default: // "active" (picked up on the phone) or "ended"
-            endRinging(key: key)
+        case "active":
+            // Picked up (from the Mac or on the phone): stop ringing, show the in-call card.
+            ringer?.stop()
+            ringer = nil
+            UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: ["call:" + (ringingKey ?? key)])
+            ringingKey = key
+            guard let model = callModel else { return } // user had silenced the card
+            model.key = key
+            model.canHangUp = (m.header["canHangUp"] as? Bool) ?? false
+            if model.phase != .active { model.startedAt = Date() }
+            model.phase = .active
+        default: // "ended"
+            endCall(key: key)
         }
     }
 
-    private func showCallPanel(key: String, name: String, detail: String, icon: NSImage?, canDecline: Bool) {
+    private func handleCallResult(_ m: Message) {
+        guard (m.header["ok"] as? Bool) == false, let model = callModel else { return }
+        if m.string("action") == "answer" {
+            model.phase = .ringing
+            model.note = "Couldn't answer from the Mac. Pick up on your phone."
+        }
+    }
+
+    private func showCallPanel(_ model: CallCardModel) {
         callPanel?.close()
-        let panel = IncomingCallPanel(name: name, detail: detail, icon: icon, canDecline: canDecline,
-                                      onDecline: { [weak self] in self?.decline(key: key) },
-                                      onSilence: { [weak self] in self?.silence() })
+        model.onAnswer = { [weak self, weak model] in
+            guard let self, let model else { return }
+            self.answer(key: model.key)
+        }
+        model.onDecline = { [weak self, weak model] in
+            guard let model else { return }
+            self?.decline(key: model.key)
+        }
+        model.onHangUp = { [weak self, weak model] in
+            guard let model else { return }
+            self?.server.send(Message("call_action", ["key": model.key, "action": "hangup"]))
+        }
+        model.onSilence = { [weak self] in self?.silence() }
+        callModel = model
+        let panel = IncomingCallPanel(model: model)
         callPanel = panel
         panel.present()
         ringer = Ringer()
         ringer?.start()
     }
 
+    /// Stop the Mac ringing and hide the card; the call itself is untouched.
     private func silence() {
         ringer?.stop()
         ringer = nil
         callPanel?.close()
         callPanel = nil
+        callModel = nil
     }
 
     func sendReply(key: String, text: String) {
         server.send(Message("notif_reply", ["key": key], body: Data(text.utf8)))
     }
 
-    func decline(key: String) {
-        server.send(Message("call_action", ["key": key, "action": "decline"]))
-        endRinging(key: key)
+    func answer(key: String) {
+        server.send(Message("call_action", ["key": key, "action": "answer"]))
+        ringer?.stop()
+        ringer = nil
+        callModel?.note = nil
+        callModel?.phase = .answering
+        UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: ["call:" + key])
     }
 
-    private func endRinging(key: String) {
-        guard key == ringingKey || ringingKey == nil else { return }
+    func decline(key: String) {
+        server.send(Message("call_action", ["key": key, "action": "decline"]))
+        endCall(key: key)
+    }
+
+    private func endCall(key: String) {
         ringingKey = nil
         silence()
         UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: ["call:" + key])
@@ -212,11 +259,36 @@ final class Ringer {
     }
 }
 
-/// Floating "incoming call" card in the top-right corner, like FaceTime's.
+/// State shared between PhoneEvents and the floating call card.
+final class CallCardModel: ObservableObject {
+    enum Phase { case ringing, answering, active }
+    @Published var phase: Phase = .ringing
+    @Published var canHangUp = false
+    @Published var note: String?
+    var startedAt = Date()
+    var key: String
+    let name: String
+    let detail: String
+    let canAnswer: Bool
+    let canDecline: Bool
+    var onAnswer: () -> Void = {}
+    var onDecline: () -> Void = {}
+    var onHangUp: () -> Void = {}
+    var onSilence: () -> Void = {}
+
+    init(key: String, name: String, detail: String, canAnswer: Bool, canDecline: Bool) {
+        self.key = key
+        self.name = name
+        self.detail = detail
+        self.canAnswer = canAnswer
+        self.canDecline = canDecline
+    }
+}
+
+/// Floating call card in the top-right corner, like FaceTime's.
 final class IncomingCallPanel: NSWindowController {
-    init(name: String, detail: String, icon: NSImage?, canDecline: Bool,
-         onDecline: @escaping () -> Void, onSilence: @escaping () -> Void) {
-        let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 360, height: 96),
+    init(model: CallCardModel) {
+        let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 400, height: 96),
                             styleMask: [.nonactivatingPanel, .borderless], backing: .buffered, defer: false)
         panel.level = .statusBar
         panel.isFloatingPanel = true
@@ -225,9 +297,7 @@ final class IncomingCallPanel: NSWindowController {
         panel.isOpaque = false
         panel.hasShadow = true
         super.init(window: panel)
-        let view = CallCardView(name: name, detail: detail, icon: icon, canDecline: canDecline,
-                                onDecline: onDecline, onSilence: onSilence)
-        panel.contentView = NSHostingView(rootView: view)
+        panel.contentView = NSHostingView(rootView: CallCardView(model: model))
     }
 
     required init?(coder: NSCoder) { fatalError() }
@@ -241,41 +311,88 @@ final class IncomingCallPanel: NSWindowController {
 }
 
 private struct CallCardView: View {
-    let name: String
-    let detail: String
-    let icon: NSImage?
-    let canDecline: Bool
-    let onDecline: () -> Void
-    let onSilence: () -> Void
+    @ObservedObject var model: CallCardModel
     @StateObject private var anim = Pulse()
-    private var pulse: Bool { anim.on }
+
+    private var ringing: Bool { model.phase == .ringing }
 
     var body: some View {
         HStack(spacing: 14) {
-            ZStack {
-                Circle().fill(Color.green.opacity(0.25)).frame(width: 52, height: 52)
-                    .scaleEffect(pulse ? 1.18 : 0.9).opacity(pulse ? 0 : 1)
-                Circle().fill(Color.green.opacity(0.18)).frame(width: 46, height: 46)
-                Image(systemName: "phone.arrow.down.left").foregroundStyle(Color.green).font(.system(size: 19, weight: .semibold))
-            }
-            .onAppear { withAnimation(.easeOut(duration: 1.2).repeatForever(autoreverses: false)) { anim.on = true } }
+            leadingCircle
+                .onAppear { withAnimation(.easeOut(duration: 1.2).repeatForever(autoreverses: false)) { anim.on = true } }
+
             VStack(alignment: .leading, spacing: 3) {
-                Text(name).font(.system(size: 15, weight: .semibold)).lineLimit(1)
-                Text(detail.isEmpty ? "Ringing on your phone" : detail)
-                    .font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(1)
+                Text(model.name).font(.system(size: 15, weight: .semibold)).lineLimit(1).minimumScaleFactor(0.85)
+                subtitle.font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(2)
             }
             Spacer(minLength: 6)
             HStack(spacing: 10) {
-                RoundButton(symbol: "bell.slash.fill", color: Color(white: 0.55), help: "Silence on Mac", action: onSilence)
-                if canDecline {
-                    RoundButton(symbol: "phone.down.fill", color: .red, help: "Decline", action: onDecline)
+                switch model.phase {
+                case .ringing:
+                    if model.canDecline {
+                        RoundButton(symbol: "phone.down.fill", color: .red, help: "Decline", action: model.onDecline)
+                    }
+                    RoundButton(symbol: "bell.slash.fill", color: Color(white: 0.55), help: "Mute ringing on Mac", action: model.onSilence)
+                case .answering:
+                    EmptyView()
+                case .active:
+                    if model.canHangUp {
+                        RoundButton(symbol: "phone.down.fill", color: .red, help: "End call", action: model.onHangUp)
+                    }
+                    RoundButton(symbol: "xmark", color: Color(white: 0.55), help: "Hide", action: model.onSilence)
                 }
             }
         }
         .padding(.horizontal, 18)
-        .frame(width: 360, height: 96)
+        .frame(width: 400, height: 96)
         .background(VisualEffect().clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous)))
         .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).strokeBorder(Color.primary.opacity(0.08)))
+    }
+
+    /// Ringing: the big green Answer button (pulsing). Otherwise: a status badge.
+    @ViewBuilder private var leadingCircle: some View {
+        ZStack {
+            if ringing {
+                Circle().fill(Color.green.opacity(0.35)).frame(width: 58, height: 58)
+                    .scaleEffect(anim.on ? 1.2 : 0.92).opacity(anim.on ? 0 : 1)
+            }
+            if ringing && model.canAnswer {
+                Button(action: model.onAnswer) {
+                    Image(systemName: "phone.fill").font(.system(size: 22, weight: .semibold)).foregroundStyle(.white)
+                        .frame(width: 54, height: 54).background(Circle().fill(Color.green))
+                }
+                .buttonStyle(.plain)
+                .help("Answer (talk on your phone)")
+            } else if model.phase == .answering {
+                Circle().fill(Color.green).frame(width: 54, height: 54)
+                    .overlay(ProgressView().controlSize(.small).tint(.white))
+            } else {
+                Circle().fill(Color.green.opacity(0.18)).frame(width: 54, height: 54)
+                    .overlay(Image(systemName: ringing ? "phone.arrow.down.left" : "phone.connection.fill")
+                        .foregroundStyle(Color.green).font(.system(size: 20, weight: .semibold)))
+            }
+        }
+        .frame(width: 58, height: 58)
+    }
+
+    @ViewBuilder private var subtitle: some View {
+        if let note = model.note {
+            Text(note)
+        } else {
+            switch model.phase {
+            case .ringing: Text(model.detail.isEmpty ? "Ringing on your phone" : model.detail)
+            case .answering: Text("Answering on your phone…")
+            case .active:
+                TimelineView(.periodic(from: model.startedAt, by: 1)) { ctx in
+                    Text("On call · \(duration(ctx.date.timeIntervalSince(model.startedAt))) · talk on your phone")
+                }
+            }
+        }
+    }
+
+    private func duration(_ t: TimeInterval) -> String {
+        let s = max(0, Int(t))
+        return s >= 3600 ? String(format: "%d:%02d:%02d", s / 3600, s / 60 % 60, s % 60) : String(format: "%d:%02d", s / 60, s % 60)
     }
 }
 

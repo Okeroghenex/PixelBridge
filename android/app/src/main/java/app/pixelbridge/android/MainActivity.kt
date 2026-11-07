@@ -66,6 +66,9 @@ class MainActivity : ComponentActivity() {
     }
 
     private val notifPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) {}
+    private val answerPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) {
+        refreshFeatures()
+    }
     private val smsPermission = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
         refreshFeatures()
     }
@@ -100,6 +103,7 @@ class MainActivity : ComponentActivity() {
             },
             setMirrorNotifications = { Prefs.mirrorNotifications = it; refreshFeatures() },
             setCallAlerts = { Prefs.callAlerts = it; refreshFeatures() },
+            requestAnswerCalls = { answerPermission.launch(Manifest.permission.ANSWER_PHONE_CALLS) },
             requestSms = {
                 if (SmsStore.hasPermission(this)) toast("On your Mac: PixelBridge menu › Messages")
                 else smsPermission.launch(arrayOf(Manifest.permission.READ_SMS, Manifest.permission.READ_CONTACTS))
@@ -176,6 +180,7 @@ class MainActivity : ComponentActivity() {
             mirrorNotifications = Prefs.mirrorNotifications,
             callAlerts = Prefs.callAlerts,
             smsGranted = SmsStore.hasPermission(this),
+            answerGranted = checkSelfPermission(Manifest.permission.ANSWER_PHONE_CALLS) == PackageManager.PERMISSION_GRANTED,
         )
     }
 
