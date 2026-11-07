@@ -4,6 +4,7 @@ import android.Manifest
 import android.annotation.SuppressLint
 import android.app.ActivityOptions
 import android.app.Notification
+import android.app.PendingIntent
 import android.app.Person
 import android.app.RemoteInput
 import android.content.ComponentName
@@ -130,8 +131,7 @@ class NotificationMirror : NotificationListenerService() {
         val n = sbn.notification
         val ex = n.extras
         val callType = ex.getInt("android.callType", 0) // 1 incoming, 2 ongoing, 3 screening
-        val titles = n.actions.orEmpty().map { it.title?.toString().orEmpty().lowercase() }
-        val ringing = callType == 1 || (callType == 0 && titles.any { "answer" in it || "decline" in it })
+        val ringing = callType == 1 || (callType == 0 && hasCallButtons(n))
         active[sbn.key] = sbn // keep the latest version so Answer / Hang up use current actions
 
         if (!ringing) {
@@ -141,7 +141,7 @@ class NotificationMirror : NotificationListenerService() {
                 callKey = sbn.key
                 Bridge.sendEvent(Message.of("call", mapOf(
                     "state" to "active", "key" to sbn.key, "name" to callerName(ex),
-                    "canHangUp" to (declineAction(n) != null),
+                    "canHangUp" to (declineIntent(n) != null),
                 )))
             }
             return
@@ -152,8 +152,8 @@ class NotificationMirror : NotificationListenerService() {
         Bridge.sendEvent(Message.of("call", mapOf(
             "state" to "ringing", "key" to sbn.key, "name" to callerName(ex),
             "detail" to ex.getCharSequence(Notification.EXTRA_TEXT)?.toString().orEmpty(),
-            "canDecline" to (declineAction(n) != null),
-            "canAnswer" to (canAcceptDirectly() || answerAction(n) != null),
+            "canDecline" to (declineIntent(n) != null),
+            "canAnswer" to (canAcceptDirectly() || answerIntent(n) != null),
         ), appIcon(sbn.packageName)))
     }
 
@@ -165,14 +165,34 @@ class NotificationMirror : NotificationListenerService() {
             ?: ex.getCharSequence(Notification.EXTRA_TITLE)?.toString() ?: "Unknown caller"
     }
 
-    private fun declineAction(n: Notification): Notification.Action? =
-        n.actions?.firstOrNull { a ->
-            val t = a.title?.toString().orEmpty().lowercase()
-            "decline" in t || "reject" in t || "hang up" in t || "end call" in t
-        }
+    /*
+     * Call controls, most reliable first. Android's CallStyle keeps the phone app's own Answer / Decline /
+     * Hang up intents in the notification extras, which works in every language. Older or custom phone
+     * apps fall back to English button labels, then to button position (CallStyle puts Decline first).
+     */
+    private fun extraIntent(n: Notification, key: String): PendingIntent? =
+        if (android.os.Build.VERSION.SDK_INT >= 33) n.extras.getParcelable(key, PendingIntent::class.java)
+        else @Suppress("DEPRECATION") n.extras.getParcelable(key)
 
-    private fun answerAction(n: Notification): Notification.Action? =
-        n.actions?.firstOrNull { a -> "answer" in a.title?.toString().orEmpty().lowercase() }
+    private fun isCallStyle(n: Notification) =
+        n.extras.getString(Notification.EXTRA_TEMPLATE) == "android.app.Notification\$CallStyle"
+
+    private fun labelled(n: Notification, vararg words: String): PendingIntent? =
+        n.actions?.firstOrNull { a -> val t = a.title?.toString().orEmpty().lowercase(); words.any { it in t } }?.actionIntent
+
+    private fun declineIntent(n: Notification): PendingIntent? =
+        extraIntent(n, "android.declineIntent") ?: extraIntent(n, "android.hangUpIntent")
+            ?: labelled(n, "decline", "reject", "hang up", "end call")
+            ?: n.actions?.takeIf { isCallStyle(n) && it.isNotEmpty() }?.first()?.actionIntent
+
+    private fun answerIntent(n: Notification): PendingIntent? =
+        extraIntent(n, "android.answerIntent")
+            ?: labelled(n, "answer")
+            ?: n.actions?.takeIf { isCallStyle(n) && it.size >= 2 }?.last()?.actionIntent
+
+    private fun hasCallButtons(n: Notification) =
+        n.extras.containsKey("android.answerIntent") ||
+            n.actions.orEmpty().any { a -> a.title?.toString().orEmpty().lowercase().let { "answer" in it || "decline" in it } }
 
     private fun canAcceptDirectly() =
         checkSelfPermission(Manifest.permission.ANSWER_PHONE_CALLS) == PackageManager.PERMISSION_GRANTED
@@ -214,13 +234,13 @@ class NotificationMirror : NotificationListenerService() {
                 return true
             } catch (e: Exception) { Log.w(TAG, "acceptRingingCall", e) }
         }
-        val action = active[key]?.let { answerAction(it.notification) } ?: return false
+        val intent = active[key]?.let { answerIntent(it.notification) } ?: return false
         return try {
             val opts = if (android.os.Build.VERSION.SDK_INT >= 34) ActivityOptions.makeBasic()
                 .setPendingIntentBackgroundActivityStartMode(
                     @Suppress("DEPRECATION") ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED).toBundle()
             else null
-            action.actionIntent.send(this, 0, null, null, null, null, opts)
+            intent.send(this, 0, null, null, null, null, opts)
             true
         } catch (e: Exception) { Log.w(TAG, "answer", e); false }
     }
@@ -229,8 +249,8 @@ class NotificationMirror : NotificationListenerService() {
     fun decline(key: String): Boolean {
         if (key != callKey) return false
         val sbn = active[key] ?: return false
-        val action = declineAction(sbn.notification) ?: return false
-        return try { action.actionIntent.send(); true } catch (e: Exception) { Log.w(TAG, "decline", e); false }
+        val intent = declineIntent(sbn.notification) ?: return false
+        return try { intent.send(); true } catch (e: Exception) { Log.w(TAG, "decline", e); false }
     }
 
     // endregion
