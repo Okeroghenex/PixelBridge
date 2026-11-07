@@ -24,6 +24,7 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
   <key>CFBundleShortVersionString</key><string>1.0</string>
   <key>CFBundleVersion</key><string>1</string>
   <key>LSMinimumSystemVersion</key><string>13.0</string>
+  <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>LSUIElement</key><true/>
   <key>NSLocalNetworkUsageDescription</key>
   <string>Link to Mac talks to your Android phone over your local Wi-Fi network.</string>
@@ -43,6 +44,9 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 </dict>
 </plist>
 PLIST
+
+# Icons from the brand SVGs in ../branding (menu bar template + app icon).
+swift tools/make-icons.swift ../branding "$APP/Contents/Resources"
 
 # Phone Screen + one-time phone setup use scrcpy (Apache-2.0), which ships with adb.
 # Pinned release, verified by SHA-256 before use.

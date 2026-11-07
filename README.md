@@ -80,6 +80,10 @@ Wireless debugging switches off when the phone leaves your Wi-Fi network. Turn i
 - **File to the phone:** drag it onto the menu bar icon. On the phone it lands in **Files → Downloads → Link to Mac**.
 - Turn off **Sync Clipboard Automatically** in the Mac menu to stop pushing Mac copies, or turn the switch off in the phone app.
 
+## Branding
+
+The logo files live in `branding/`. The Android launcher icon is an adaptive icon built from them, so each launcher crops it to its own shape: a circle on Pixel, a squircle on Samsung, a square on others. `mac/tools/make-icons.swift` turns them into the Mac app icon and menu bar icon whenever the app is built.
+
 ## Security
 
 - Pairing creates a random 128-bit secret on the Mac (`~/Library/Application Support/PixelBridge/pairing.key`, mode 600).

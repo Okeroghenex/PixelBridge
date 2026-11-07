@@ -109,8 +109,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func setIcon(connected: Bool) {
-        let name = connected ? "iphone.radiowaves.left.and.right" : "iphone.slash"
-        let img = NSImage(systemSymbolName: name, accessibilityDescription: "Link to Mac")
+        // Link to Mac glyph from the app bundle; faded while no phone is connected.
+        let img = NSImage(named: connected ? "MenuIcon" : "MenuIconOff")
+            ?? NSImage(systemSymbolName: connected ? "iphone.radiowaves.left.and.right" : "iphone.slash",
+                       accessibilityDescription: "Link to Mac")
+        img?.accessibilityDescription = connected ? "Link to Mac – connected" : "Link to Mac – not connected"
         img?.isTemplate = true
         statusItem.button?.image = img
     }

@@ -1,5 +1,5 @@
 <resources>
     <color name="brand">#141414</color>
-    <color name="launcher_bg">#141414</color>
+    <color name="launcher_bg">#000000</color>
     <color name="window_bg">#F7F7F7</color>
 </resources>
