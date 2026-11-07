@@ -1,3 +1,4 @@
+import AVFoundation
 import AppKit
 import BridgeCore
 
@@ -25,19 +26,76 @@ final class WallpaperSync {
         check()
     }
 
+    /// What's on the desktop: an aerial (video), a picture file, or whatever NSWorkspace reports.
+    private enum Source { case aerial(id: String), file(URL) }
+
+    private static let store = FileManager.default.homeDirectoryForCurrentUser
+        .appendingPathComponent("Library/Application Support/com.apple.wallpaper")
+
+    /// Since macOS 14, wallpapers picked in System Settings live in the wallpaper store, and
+    /// NSWorkspace.desktopImageURL can report a stale default (e.g. for Aerials). Read the store first.
+    private static func currentSource() -> Source? {
+        let index = store.appendingPathComponent("Store/Index.plist")
+        if let data = try? Data(contentsOf: index),
+           let root = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any] {
+            for scope in ["AllSpacesAndDisplays", "SystemDefault"] {
+                guard let entry = root[scope] as? [String: Any] else { continue }
+                // "linked": one wallpaper for desktop and screen saver; "individual": separate ones.
+                let side = (entry["Linked"] ?? entry["Desktop"]) as? [String: Any]
+                guard let choice = ((side?["Content"] as? [String: Any])?["Choices"] as? [[String: Any]])?.first
+                else { continue }
+                let provider = choice["Provider"] as? String ?? ""
+                if provider.hasSuffix(".aerials"), let cfg = choice["Configuration"] as? Data,
+                   let dict = try? PropertyListSerialization.propertyList(from: cfg, format: nil) as? [String: Any],
+                   let id = dict["assetID"] as? String {
+                    return .aerial(id: id)
+                }
+                if let files = choice["Files"] as? [[String: Any]], let rel = files.first?["relative"] as? String,
+                   let url = URL(string: rel), url.isFileURL {
+                    return .file(url)
+                }
+            }
+        }
+        guard let screen = NSScreen.main, let url = NSWorkspace.shared.desktopImageURL(for: screen) else { return nil }
+        return .file(url)
+    }
+
     private func check() {
-        guard server.hasPhone, let screen = NSScreen.main,
-              let url = NSWorkspace.shared.desktopImageURL(for: screen) else { return }
-        let modified = (try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate)?
-            .timeIntervalSince1970 ?? 0
-        let key = "\(url.path)|\(modified)"
+        guard server.hasPhone, let source = Self.currentSource() else { return }
+        let key: String
+        switch source {
+        case .aerial(let id): key = "aerial|\(id)"
+        case .file(let url):
+            let modified = (try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate)?
+                .timeIntervalSince1970 ?? 0
+            key = "\(url.path)|\(modified)"
+        }
         guard key != lastSent else { return }
         lastSent = key
         DispatchQueue.global(qos: .utility).async { [weak self] in
-            guard let jpeg = Self.render(url) else { pbLog("Couldn't read wallpaper at \(url.lastPathComponent)"); return }
+            let image: NSImage?
+            switch source {
+            case .aerial(let id): image = Self.aerialFrame(id)
+            case .file(let url): image = Self.image(at: url)
+            }
+            guard let image, let jpeg = Self.render(image) else { pbLog("Couldn't read the wallpaper (\(key))"); return }
             self?.server.send(Message("wallpaper", ["w": 800, "h": 500], body: jpeg))
             pbLog("Sent wallpaper (\(jpeg.count / 1024) KB)")
         }
+    }
+
+    /// A still from an Aerial's downloaded video (its bundled thumbnail is only ~214 px wide).
+    private static func aerialFrame(_ id: String) -> NSImage? {
+        let video = store.appendingPathComponent("aerials/videos/\(id).mov")
+        if FileManager.default.fileExists(atPath: video.path) {
+            let gen = AVAssetImageGenerator(asset: AVURLAsset(url: video))
+            gen.appliesPreferredTrackTransform = true
+            gen.maximumSize = CGSize(width: 1600, height: 1000)
+            if let cg = try? gen.copyCGImage(at: .zero, actualTime: nil) {
+                return NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height))
+            }
+        }
+        return NSImage(contentsOf: store.appendingPathComponent("aerials/thumbnails/\(id).png"))
     }
 
     /// Aerial/dynamic wallpapers are .madesktop bundles; macOS keeps a still thumbnail for each.
@@ -53,8 +111,8 @@ final class WallpaperSync {
     }
 
     /// 800×500 (the phone's laptop screen is 16:10), cropped to fill, as JPEG.
-    private static func render(_ url: URL) -> Data? {
-        guard let img = image(at: url), img.size.width > 0, img.size.height > 0 else { return nil }
+    private static func render(_ img: NSImage) -> Data? {
+        guard img.size.width > 0, img.size.height > 0 else { return nil }
         let target = NSSize(width: 800, height: 500)
         let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: Int(target.width), pixelsHigh: Int(target.height),
                                    bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
