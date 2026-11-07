@@ -37,7 +37,7 @@ final class MessagesModel: ObservableObject {
 
     func refresh() {
         guard server.hasPhone else {
-            error = "Your phone isn't connected. Open PixelBridge on the phone and try again."
+            error = "Your phone isn't connected. Open Link to Mac on the phone and try again."
             return
         }
         loading = true
@@ -47,7 +47,7 @@ final class MessagesModel: ObservableObject {
         let t = DispatchWorkItem { [weak self] in
             guard let self, self.loading else { return }
             self.loading = false
-            self.error = "Your phone didn't answer. Make sure PixelBridge is open on it."
+            self.error = "Your phone didn't answer. Make sure Link to Mac is open on it."
         }
         timeout = t
         DispatchQueue.main.asyncAfter(deadline: .now() + 10, execute: t)
@@ -61,7 +61,7 @@ final class MessagesModel: ObservableObject {
     func handle(_ m: Message) {
         if m.string("error") == "permission" {
             loading = false
-            error = "On your phone, open PixelBridge and tap “Text message history” to allow access."
+            error = "On your phone, open Link to Mac and tap “Text message history” to allow access."
             return
         }
         let arr = (try? JSONSerialization.jsonObject(with: m.body)) as? [[String: Any]] ?? []

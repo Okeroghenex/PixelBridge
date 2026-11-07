@@ -1,8 +1,8 @@
-# PixelBridge
+# Link to Mac
 
 Shared clipboard and file transfer between a Mac and an Android phone (built for the Pixel 10 Pro) over your local Wi-Fi. No cloud and no account. Everything is end-to-end encrypted with a key you pair once.
 
-![PixelBridge on Android: pairing, home, scrolled, dark mode](docs/screenshots/overview.png)
+![Link to Mac on Android: pairing, home, scrolled, dark mode](docs/screenshots/overview.png)
 
 | Feature | How it works |
 |---|---|
@@ -15,7 +15,7 @@ Shared clipboard and file transfer between a Mac and an Android phone (built for
 | **Text messages** | Menu bar → **Messages** shows your SMS conversations |
 
 > **Limits worth knowing**
-> - *Automatic phone → Mac clipboard* uses the method KDE Connect uses. Android only lets the on-screen app read the clipboard, so PixelBridge needs two one-time permissions granted from the Mac. Android also asks **"Allow access to device logs?"** whenever PixelBridge restarts (for example after a phone reboot). Tap the PixelBridge notification and choose **Allow one-time access**.
+> - *Automatic phone → Mac clipboard* uses the method KDE Connect uses. Android only lets the on-screen app read the clipboard, so Link to Mac needs two one-time permissions granted from the Mac. Android also asks **"Allow access to device logs?"** whenever Link to Mac restarts (for example after a phone reboot). Tap the Link to Mac notification and choose **Allow one-time access**.
 > - *Messages* shows **SMS only**. Google Messages keeps RCS chats private to itself, but they still reach the Mac as notifications you can reply to.
 > - *Calls* ring on the Mac, but the audio stays on the phone.
 
@@ -28,7 +28,7 @@ cd ~/Desktop/PixelBridge/mac && ./build-app.sh
 ```
 
 ```bash
-mv ~/Desktop/PixelBridge/mac/dist/PixelBridge.app /Applications/ && open /Applications/PixelBridge.app
+mv ~/Desktop/PixelBridge/mac/dist/"Link to Mac.app" /Applications/ && open "/Applications/Link to Mac.app"
 ```
 
 - A phone icon appears in the menu bar. The first launch opens the **Pair your Android phone** window.
@@ -49,7 +49,7 @@ mv ~/Desktop/PixelBridge/mac/dist/PixelBridge.app /Applications/ && open /Applic
 ## 3. Pair
 
 1. On the Mac: menu bar icon → **Pair Phone…**
-2. On the phone: open PixelBridge → **Scan pairing QR code**. Pointing the Pixel camera at the QR code works too.
+2. On the phone: open Link to Mac → **Scan pairing QR code**. Pointing the Pixel camera at the QR code works too.
    No camera? Use **Enter pairing code** and type the code shown under the QR code.
 3. The status changes to **Connected to <your Mac>**.
 4. On the phone, tap **Add “Send to Mac” Quick Settings tile** and **Let it stay connected in the background**.
@@ -58,8 +58,8 @@ The phone finds the Mac automatically over Bonjour/mDNS, and falls back to the M
 
 ## 4. Turn on the extras (once)
 
-On the phone, open PixelBridge and look at the **On your Mac** card:
-- **Notifications & calls → Allow**: turn on PixelBridge under *Notification access*.
+On the phone, open Link to Mac and look at the **On your Mac** card:
+- **Notifications & calls → Allow**: turn on Link to Mac under *Notification access*.
 - **Text message history → Allow**: allow SMS and Contacts access.
 
 On the Mac, choose menu bar → **Set Up Phone…**:
@@ -77,7 +77,7 @@ Wireless debugging switches off when the phone leaves your Wi-Fi network. Turn i
 - **Phone rings:** your Mac rings and shows a card at the top right. Pick up on the phone, or click **Decline** or **Silence** on the Mac.
 - **Messages:** reply straight from the Mac notification. Menu bar → **Messages** shows your SMS history.
 - **Photo or file to the Mac:** Share → **Mac**. It lands in `~/Downloads` with a notification; click it to show the file in Finder.
-- **File to the phone:** drag it onto the menu bar icon. On the phone it lands in **Files → Downloads → PixelBridge**.
+- **File to the phone:** drag it onto the menu bar icon. On the phone it lands in **Files → Downloads → Link to Mac**.
 - Turn off **Sync Clipboard Automatically** in the Mac menu to stop pushing Mac copies, or turn the switch off in the phone app.
 
 ## Security
@@ -104,10 +104,10 @@ While it waits, anything you copy on the Mac is printed as `RECV clip_text …`.
 ## Troubleshooting
 
 - **Logs:** `~/Library/Logs/PixelBridge.log` (connections and event types only, never message contents) and `~/Library/Logs/PixelBridge-scrcpy.log`.
-- **Automatic copy stopped after a phone restart:** tap PixelBridge's *"Tap to turn on automatic copy"* notification, then choose **Allow one-time access**.
+- **Automatic copy stopped after a phone restart:** tap Link to Mac's *"Tap to turn on automatic copy"* notification, then choose **Allow one-time access**.
 - **Phone Screen opens Set Up Phone instead:** turn Wireless debugging on again on the phone, or plug it in with USB.
 
-- **Phone stuck on "Looking for your Mac…"**: check that both are on the same Wi-Fi, that the Mac menu says "Waiting for phone…", and that **System Settings → Privacy & Security → Local Network → PixelBridge** is on. Then use **Enter pairing code** with the Mac's IP address shown in the pairing window.
+- **Phone stuck on "Looking for your Mac…"**: check that both are on the same Wi-Fi, that the Mac menu says "Waiting for phone…", and that **System Settings → Privacy & Security → Local Network → Link to Mac** is on. Then use **Enter pairing code** with the Mac's IP address shown in the pairing window.
 - **"Pairing code rejected"**: the Mac's code was reset. Pair again.
 - **Connection drops when the phone sleeps**: tap **Let it stay connected in the background** in the phone app.
 - **Finder Services item missing**: log out and back in once after moving the app to /Applications.

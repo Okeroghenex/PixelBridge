@@ -96,7 +96,7 @@ final class PairingWindowController: NSWindowController {
         stack.spacing = 14
         stack.edgeInsets = NSEdgeInsets(top: 24, left: 24, bottom: 24, right: 24)
 
-        let title = NSTextField(labelWithString: "Scan with the PixelBridge app")
+        let title = NSTextField(labelWithString: "Scan with the Link to Mac app")
         title.font = .boldSystemFont(ofSize: 16)
 
         let qr = NSImageView()

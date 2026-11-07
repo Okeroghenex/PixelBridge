@@ -461,7 +461,7 @@ class IncomingFile private constructor(
             val values = ContentValues().apply {
                 put(MediaStore.MediaColumns.DISPLAY_NAME, safe)
                 put(MediaStore.MediaColumns.MIME_TYPE, mime)
-                put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/PixelBridge")
+                put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/Link to Mac")
                 put(MediaStore.MediaColumns.IS_PENDING, 1)
             }
             val resolver = context.contentResolver

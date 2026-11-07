@@ -226,7 +226,7 @@ struct PhoneSetupView: View {
                     VStack(spacing: 0) {
                         FeatureRow(symbol: "doc.on.clipboard", color: .blue, title: "Copy on phone, paste on Mac",
                                    detail: model.autoClipOn
-                                   ? "On. After the phone restarts, tap PixelBridge's notification once."
+                                   ? "On. After the phone restarts, tap Link to Mac's notification once."
                                    : "Sends anything you copy on the phone to this Mac.") {
                             if model.autoClipOn { Label("On", systemImage: "checkmark.circle.fill").foregroundStyle(.green) }
                             else { Button("Turn On", action: model.enableAutoClipboard) }

@@ -111,7 +111,7 @@ class MainActivity : ComponentActivity() {
             setCallAlerts = { Prefs.callAlerts = it; refreshFeatures() },
             requestAnswerCalls = { answerPermission.launch(Manifest.permission.ANSWER_PHONE_CALLS) },
             requestSms = {
-                if (SmsStore.hasPermission(this)) toast("On your Mac: PixelBridge menu › Messages")
+                if (SmsStore.hasPermission(this)) toast("On your Mac: Link to Mac menu › Messages")
                 else smsPermission.launch(arrayOf(Manifest.permission.READ_SMS, Manifest.permission.READ_CONTACTS))
             },
         )
@@ -202,7 +202,7 @@ class MainActivity : ComponentActivity() {
         GmsBarcodeScanning.getClient(this, options).startScan()
             .addOnSuccessListener { code ->
                 val info = code.rawValue?.let { Pairing.parseUri(it) }
-                if (info == null) toast("That isn't a PixelBridge code") else applyPairing(info)
+                if (info == null) toast("That isn't a Link to Mac code") else applyPairing(info)
             }
             .addOnFailureListener { toast("Scanner unavailable: ${it.message}") }
     }
@@ -243,7 +243,7 @@ class MainActivity : ComponentActivity() {
                 try { startActivity(view) } catch (_: Exception) { openDownloads() }
             }
             e.kind == History.Kind.CLIP_IN || e.kind == History.Kind.CLIP_OUT -> {
-                getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("PixelBridge", e.title))
+                getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("Link to Mac", e.title))
                 if (Build.VERSION.SDK_INT < 33) toast("Copied")
             }
             else -> Unit
@@ -251,7 +251,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun openDownloads() {
-        try { startActivity(Intent(DownloadManager.ACTION_VIEW_DOWNLOADS)) } catch (_: Exception) { toast("Open Files › Downloads › PixelBridge") }
+        try { startActivity(Intent(DownloadManager.ACTION_VIEW_DOWNLOADS)) } catch (_: Exception) { toast("Open Files › Downloads › Link to Mac") }
     }
 
     private fun addTile() {

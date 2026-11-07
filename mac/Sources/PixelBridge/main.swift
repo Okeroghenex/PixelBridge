@@ -34,7 +34,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         setIcon(connected: false)
-        statusItem.button?.toolTip = "PixelBridge"
+        statusItem.button?.toolTip = "Link to Mac"
         if let button = statusItem.button {
             let drop = DropView(frame: button.bounds)
             drop.autoresizingMask = [.width, .height]
@@ -94,7 +94,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(withTitle: "Open Downloads Folder", action: #selector(openDownloads), keyEquivalent: "")
         loginItem = menu.addItem(withTitle: "Launch at Login", action: #selector(toggleLogin), keyEquivalent: "")
         menu.addItem(.separator())
-        menu.addItem(withTitle: "Quit PixelBridge", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        menu.addItem(withTitle: "Quit Link to Mac", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         menu.items.forEach { if $0.action != nil && $0.target == nil && $0.action != #selector(NSApplication.terminate(_:)) { $0.target = self } }
         statusItem.menu = menu
     }
@@ -110,7 +110,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func setIcon(connected: Bool) {
         let name = connected ? "iphone.radiowaves.left.and.right" : "iphone.slash"
-        let img = NSImage(systemSymbolName: name, accessibilityDescription: "PixelBridge")
+        let img = NSImage(systemSymbolName: name, accessibilityDescription: "Link to Mac")
         img?.isTemplate = true
         statusItem.button?.image = img
     }
@@ -189,7 +189,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func sendFiles(_ urls: [URL]) {
         let files = urls.filter { !$0.hasDirectoryPath }
         guard !files.isEmpty else { return }
-        guard connected else { notify("Phone not connected", "Open PixelBridge on your phone and try again."); return }
+        guard connected else { notify("Phone not connected", "Open Link to Mac on your phone and try again."); return }
         statusItem.button?.appearsDisabled = true
         server.sendFiles(files, progress: { [weak self] name, p in
             self?.statusLine.title = "Sending \(name)… \(Int(p * 100))%"
@@ -236,7 +236,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             if SMAppService.mainApp.status == .enabled { try SMAppService.mainApp.unregister() }
             else { try SMAppService.mainApp.register() }
         } catch {
-            notify("Couldn't change login item", "Move PixelBridge.app to /Applications and try again.")
+            notify("Couldn't change login item", "Move Link to Mac to /Applications and try again.")
         }
     }
 

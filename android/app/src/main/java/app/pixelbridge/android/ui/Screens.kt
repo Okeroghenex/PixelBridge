@@ -204,7 +204,7 @@ private fun TopMenu(actions: HomeActions) {
     val c = BridgeTheme.colors
     var open by remember { mutableStateOf(false) }
     Row(Modifier.fillMaxWidth().padding(top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text("PixelBridge", style = MaterialTheme.typography.bodyLarge, color = c.muted, modifier = Modifier.weight(1f))
+        Text("Link to Mac", style = MaterialTheme.typography.bodyLarge, color = c.muted, modifier = Modifier.weight(1f))
         Box {
             IconButton(onClick = { open = true }) { LineIcon(PbIcons.More) }
             DropdownMenu(expanded = open, onDismissRequest = { open = false }, containerColor = c.card,
@@ -379,7 +379,7 @@ fun SettingsScreen(
                         actions.openNotificationAccess)
                 }
                 if (f.smsGranted) {
-                    InfoRow("Text message history", "On your Mac, open the PixelBridge menu and choose Messages.")
+                    InfoRow("Text message history", "On your Mac, open the Link to Mac menu and choose Messages.")
                 } else {
                     ButtonRow("Text message history", "Read your SMS conversations on your Mac.", "Allow", actions.requestSms)
                 }
@@ -388,11 +388,11 @@ fun SettingsScreen(
                 ToggleRow("Copy from Mac automatically", "Things you copy on your Mac are ready to paste here.",
                     receiveClipboard, actions.setReceiveClipboard)
                 ToggleRow("Let app run in the background",
-                    "To stay connected to your Mac, PixelBridge needs to keep running in the background.",
+                    "To stay connected to your Mac, Link to Mac needs to keep running in the background.",
                     backgroundAllowed) { if (!backgroundAllowed) actions.allowBackground() }
                 NavRow("Quick Settings tile", "Add a tile that sends your clipboard to your Mac.", actions.addTile)
                 NavRow("Send clipboard now", "Send what's on this phone's clipboard to your Mac.", actions.sendClipboard)
-                NavRow("Received files", "Downloads › PixelBridge", actions.openReceived)
+                NavRow("Received files", "Downloads › Link to Mac", actions.openReceived)
                 if (hasHistory) NavRow("Clear recent activity", "Remove everything from the Recent list.", actions.clearHistory)
             }
         }
@@ -492,7 +492,7 @@ fun PairScreen(state: BridgeState, onScan: () -> Unit, onEnterCode: () -> Unit) 
             Spacer(Modifier.height(30.dp))
             Outlined(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(vertical = 8.dp)) {
-                    Step(1, "Open PixelBridge on your Mac", "It lives in the menu bar")
+                    Step(1, "Open Link to Mac on your Mac", "It lives in the menu bar")
                     Step(2, "Click the menu bar icon", "Then choose Pair Phone…")
                     Step(3, "Scan the QR code", "Phone and Mac must share a Wi-Fi network")
                 }
@@ -572,7 +572,7 @@ fun AutoClipHelpDialog(onDismiss: () -> Unit) {
         text = {
             Text("Android only lets the app you're looking at read the clipboard, so this needs a one-time " +
                 "setup from your Mac:\n\n1. On this phone: Settings › System › Developer options › turn on Wireless debugging.\n" +
-                "2. On your Mac: PixelBridge menu › Set Up Phone…, and follow the steps.\n\n" +
+                "2. On your Mac: Link to Mac menu › Set Up Phone…, and follow the steps.\n\n" +
                 "After that, anything you copy here is ready to paste on your Mac.",
                 style = MaterialTheme.typography.bodyMedium)
         },

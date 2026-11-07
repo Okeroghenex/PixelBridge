@@ -1,4 +1,4 @@
-# PixelBridge wire protocol (v1)
+# Link to Mac wire protocol (v1)
 
 - **Transport:** TCP. The Mac listens on port 47820 (or any free port if that one is busy) and advertises over Bonjour as `_pixelbridge._tcp`. The phone connects.
 - **Framing:** each frame is `[u32 big-endian length][payload]`, max 8 MiB.

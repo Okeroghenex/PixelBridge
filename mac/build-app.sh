@@ -1,12 +1,12 @@
 #!/bin/bash
-# Builds PixelBridge.app (menu bar app) into ./dist. Needs only the Xcode Command Line Tools.
+# Builds "Link to Mac.app" (menu bar app) into ./dist. Needs only the Xcode Command Line Tools.
 set -euo pipefail
 cd "$(dirname "$0")"
 SCRATCH="${SCRATCH:-.build}"
 swift build -c release --product PixelBridge --scratch-path "$SCRATCH"
 BIN="$(swift build -c release --product PixelBridge --scratch-path "$SCRATCH" --show-bin-path)/PixelBridge"
 
-APP=dist/PixelBridge.app
+APP="dist/Link to Mac.app"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/PixelBridge"
@@ -17,8 +17,8 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 <plist version="1.0">
 <dict>
   <key>CFBundleIdentifier</key><string>app.pixelbridge.mac</string>
-  <key>CFBundleName</key><string>PixelBridge</string>
-  <key>CFBundleDisplayName</key><string>PixelBridge</string>
+  <key>CFBundleName</key><string>Link to Mac</string>
+  <key>CFBundleDisplayName</key><string>Link to Mac</string>
   <key>CFBundleExecutable</key><string>PixelBridge</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>1.0</string>
@@ -26,15 +26,15 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
   <key>LSMinimumSystemVersion</key><string>13.0</string>
   <key>LSUIElement</key><true/>
   <key>NSLocalNetworkUsageDescription</key>
-  <string>PixelBridge talks to your Android phone over your local Wi-Fi network.</string>
+  <string>Link to Mac talks to your Android phone over your local Wi-Fi network.</string>
   <key>NSBonjourServices</key>
   <array><string>_pixelbridge._tcp</string></array>
   <key>NSServices</key>
   <array>
     <dict>
-      <key>NSMenuItem</key><dict><key>default</key><string>Send to Phone (PixelBridge)</string></dict>
+      <key>NSMenuItem</key><dict><key>default</key><string>Send to Phone (Link to Mac)</string></dict>
       <key>NSMessage</key><string>sendToPhone</string>
-      <key>NSPortName</key><string>PixelBridge</string>
+      <key>NSPortName</key><string>Link to Mac</string>
       <key>NSRequiredContext</key><dict/>
       <key>NSSendFileTypes</key><array><string>public.item</string></array>
       <key>NSSendTypes</key><array><string>NSStringPboardType</string><string>public.utf8-plain-text</string></array>
