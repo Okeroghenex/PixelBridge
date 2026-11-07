@@ -208,6 +208,7 @@ class MainActivity : ComponentActivity() {
             mirrorNotifications = Prefs.mirrorNotifications,
             callAlerts = Prefs.callAlerts,
             smsGranted = SmsStore.hasPermission(this),
+            lite = Edition.isLite,
             answerGranted = checkSelfPermission(Manifest.permission.ANSWER_PHONE_CALLS) == PackageManager.PERMISSION_GRANTED,
         )
     }

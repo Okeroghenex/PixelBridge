@@ -100,6 +100,7 @@ data class FeatureState(
     val callAlerts: Boolean = true,
     val smsGranted: Boolean = false,
     val answerGranted: Boolean = false,
+    val lite: Boolean = false,
 )
 
 // region Building blocks
@@ -421,7 +422,10 @@ fun SettingsScreen(
                     ButtonRow("Copy here, paste on Mac", "Needs a one-time setup from your Mac.", "Set up",
                         actions.explainAutoClipboard)
                 }
-                if (f.notificationAccess) {
+                if (f.lite) {
+                    InfoRow("Notifications, calls and texts",
+                        "Not in Link to Mac Lite. Install the full version from the project's GitHub page to use them.")
+                } else if (f.notificationAccess) {
                     ToggleRow("Notifications", "Show this phone's notifications on your Mac and reply from there.",
                         f.mirrorNotifications, actions.setMirrorNotifications)
                     ToggleRow("Ring on Mac", "Your Mac rings when a call comes in.", f.callAlerts, actions.setCallAlerts)
@@ -433,7 +437,9 @@ fun SettingsScreen(
                     ButtonRow("Notifications and calls", "Show notifications and ring on your Mac.", "Allow",
                         actions.openNotificationAccess)
                 }
-                if (f.smsGranted) {
+                if (f.lite) {
+                    // nothing more to show
+                } else if (f.smsGranted) {
                     InfoRow("Text message history", "On your Mac, open the Link to Mac menu and choose Messages.")
                 } else {
                     ButtonRow("Text message history", "Read your SMS conversations on your Mac.", "Allow", actions.requestSms)

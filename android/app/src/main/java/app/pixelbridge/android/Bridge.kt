@@ -391,7 +391,8 @@ object Bridge {
                 sendEvent(Message.of("call_action_result", mapOf("key" to key, "action" to action, "ok" to ok)))
             }
             "sms_threads_req" -> sendExec.execute {
-                val reply = if (!SmsStore.hasPermission(app)) Message.of("sms_threads", mapOf("error" to "permission"))
+                val reply = if (Edition.isLite) Message.of("sms_threads", mapOf("error" to "unsupported"))
+                else if (!SmsStore.hasPermission(app)) Message.of("sms_threads", mapOf("error" to "permission"))
                 else Message.of("sms_threads", body = SmsStore.threads(app).toString().toByteArray())
                 try { write(reply) } catch (_: Exception) {}
             }

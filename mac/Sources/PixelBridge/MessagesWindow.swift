@@ -59,6 +59,11 @@ final class MessagesModel: ObservableObject {
     }
 
     func handle(_ m: Message) {
+        if m.string("error") == "unsupported" {
+            loading = false
+            error = "Your phone has Link to Mac Lite, which doesn't include text messages. Install the full version to see them here."
+            return
+        }
         if m.string("error") == "permission" {
             loading = false
             error = "On your phone, open Link to Mac and tap “Text message history” to allow access."

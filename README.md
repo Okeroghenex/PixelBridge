@@ -19,7 +19,31 @@ Shared clipboard and file transfer between a Mac and an Android phone (built for
 > - *Messages* shows **SMS only**. Google Messages keeps RCS chats private to itself, but they still reach the Mac as notifications you can reply to.
 > - *Calls* ring on the Mac, but the audio stays on the phone.
 
-## 1. Mac app
+## Download
+
+Get the latest version from **[Releases](https://github.com/Okeroghenex/PixelBridge/releases/latest)**:
+
+| File | For |
+|---|---|
+| `Link-to-Mac-<version>.dmg` | macOS 13 or later, Apple Silicon and Intel |
+| `LinkToMac-<version>.apk` | Android 10+, **full** version: everything, including notifications, calls and text messages |
+| `LinkToMac-Lite-<version>.apk` | Android 10+, **Lite**: clipboard, files, Lock Mac and Phone Screen; installs anywhere |
+
+Each file has a `.sha256` checksum next to it.
+
+**Installing on Android**
+- Open the APK on your phone and allow your browser or file manager to install apps when asked.
+- **"App blocked to protect your device"** (full version only): in some countries, Android blocks downloaded apps that read SMS or notifications. Install **Lite** instead, or install the full version from a computer with `adb install LinkToMac-<version>.apk`.
+- After installing the full version, if notification or SMS access is greyed out: **Settings › Apps › Link to Mac › ⋮ › Allow restricted settings**.
+- Both versions use the same signing key, so you can switch between them without losing your pairing.
+
+**Installing on Mac**
+- Open the DMG and drag **Link to Mac** into **Applications**.
+- The app isn't notarized by Apple yet, so the first launch is blocked. Open **System Settings › Privacy & Security** and click **Open Anyway**. You only need to do this once.
+
+## Building from source
+
+### 1. Mac app
 
 Needs only the Xcode Command Line Tools (already installed here).
 
@@ -35,7 +59,7 @@ mv ~/Desktop/PixelBridge/mac/dist/"Link to Mac.app" /Applications/ && open "/App
 - Allow **Local Network** access and **incoming connections** if macOS asks, and allow notifications.
 - Menu bar → **Launch at Login** keeps it running.
 
-## 2. Android app (Pixel 10 Pro)
+### 2. Android app
 
 1. Install [Android Studio](https://developer.android.com/studio) and open the `android/` folder (**File → Open**). The first Gradle sync downloads the SDK and dependencies.
 2. On the Pixel: **Settings → About phone →** tap **Build number** 7 times, then **System → Developer options → USB debugging** on.
@@ -43,10 +67,12 @@ mv ~/Desktop/PixelBridge/mac/dist/"Link to Mac.app" /Applications/ && open "/App
    Or build a small (about 2.5 MB) installable APK from the terminal, then copy `android/app/build/outputs/apk/release/app-release.apk` to the phone:
 
    ```bash
-   cd ~/Desktop/PixelBridge/android && ./gradlew assembleRelease
+   cd ~/Desktop/PixelBridge/android && ./gradlew assembleFullRelease assembleLiteRelease
    ```
 
-## 3. Pair
+   Release builds are signed with the key in `~/.linktomac/signing.properties` if it exists, otherwise with the debug key.
+
+## Pair
 
 1. On the Mac: menu bar icon → **Pair Phone…**
 2. On the phone: open Link to Mac → **Scan pairing QR code**. Pointing the Pixel camera at the QR code works too.
@@ -56,7 +82,7 @@ mv ~/Desktop/PixelBridge/mac/dist/"Link to Mac.app" /Applications/ && open "/App
 
 The phone finds the Mac automatically over Bonjour/mDNS, and falls back to the Mac's IP address saved during pairing. Both devices must be on the same network. Some guest or office Wi-Fi networks block devices from talking to each other.
 
-## 4. Turn on the extras (once)
+## Turn on the extras (once)
 
 On the phone, open Link to Mac and look at the **On your Mac** card:
 - **Notifications & calls → Allow**: turn on Link to Mac under *Notification access*.
@@ -79,6 +105,20 @@ Wireless debugging switches off when the phone leaves your Wi-Fi network. Turn i
 - **Photo or file to the Mac:** Share → **Mac**. It lands in `~/Downloads` with a notification; click it to show the file in Finder.
 - **File to the phone:** drag it onto the menu bar icon. On the phone it lands in **Files → Downloads → Link to Mac**.
 - Turn off **Sync Clipboard Automatically** in the Mac menu to stop pushing Mac copies, or turn the switch off in the phone app.
+
+## Releasing
+
+1. Raise `versionCode` and `versionName` in `android/app/build.gradle.kts`, and `VERSION` and `BUILD` in `mac/build-app.sh`.
+2. Build the Android release with `./gradlew assembleFullRelease assembleLiteRelease`. Build the Mac DMG with `mac/build-app.sh && mac/make-dmg.sh`. Universal builds need only the Command Line Tools.
+3. Upload the files from `dist/` to a GitHub release, together with their `.sha256` files.
+
+**Keep `~/.linktomac/release.jks` and `signing.properties` backed up and private.** Every future Android update must be signed with this key, or it won't install over the old version.
+
+For a Mac download that opens without the Gatekeeper warning, sign the app with an Apple **Developer ID** certificate, notarize it with `xcrun notarytool`, then staple the ticket. This needs a paid Apple Developer account.
+
+## License
+
+MIT (see `LICENSE`). Bundled third-party components are listed in `THIRD_PARTY_NOTICES.md`.
 
 ## Branding
 

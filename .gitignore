@@ -14,3 +14,4 @@ android/.kotlin/
 *.iml
 mac/vendor-dl/
 mac/vendor/
+dist/

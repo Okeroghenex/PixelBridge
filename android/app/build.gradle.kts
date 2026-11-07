@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -16,13 +18,27 @@ android {
         versionName = "1.4"
     }
 
+    // Release key lives outside the repo (~/.linktomac/signing.properties). Without it, release builds
+    // fall back to the debug key so anyone can still build from source.
+    val signingProps = Properties().apply {
+        val f = file(System.getProperty("user.home") + "/.linktomac/signing.properties")
+        if (f.exists()) f.inputStream().use { load(it) }
+    }
+    signingConfigs {
+        if (signingProps.isNotEmpty()) create("release") {
+            storeFile = file(signingProps.getProperty("storeFile"))
+            storePassword = signingProps.getProperty("storePassword")
+            keyAlias = signingProps.getProperty("keyAlias")
+            keyPassword = signingProps.getProperty("keyPassword")
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"))
-            // Signed with the debug key so "Build > Build APK" gives an installable release build.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
         }
     }
     compileOptions {
@@ -34,6 +50,15 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
+    }
+
+    // full: everything. lite: no SMS or notification access, so downloaded APKs aren't blocked by
+    // Android's fraud protection. Same app ID and key, so people can switch between them.
+    flavorDimensions += "edition"
+    productFlavors {
+        create("full") { dimension = "edition" }
+        create("lite") { dimension = "edition"; versionNameSuffix = "-lite" }
     }
 }
 
