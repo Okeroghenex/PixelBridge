@@ -51,6 +51,10 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.FilterQuality
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.input.KeyboardCapitalization
@@ -152,7 +156,7 @@ private fun PillButton(text: String, onClick: () -> Unit) {
 
 /** Minimal laptop like Link to Windows': a dark screen and a thin light base. */
 @Composable
-fun MacIllustration(modifier: Modifier = Modifier) {
+fun MacIllustration(modifier: Modifier = Modifier, wallpaper: ImageBitmap? = null) {
     val c = BridgeTheme.colors
     Canvas(modifier.size(width = 208.dp, height = 128.dp)) {
         val w = size.width
@@ -160,6 +164,24 @@ fun MacIllustration(modifier: Modifier = Modifier) {
         val screenH = size.height - 8.dp.toPx()
         val left = (w - screenW) / 2
         drawRect(c.screen, Offset(left, 0f), Size(screenW, screenH))
+        if (wallpaper != null) {
+            // The Mac's own desktop, inside a thin bezel, cropped to fill like macOS does.
+            val bezel = 3.dp.toPx()
+            val dstW = (screenW - 2 * bezel).toInt()
+            val dstH = (screenH - 2 * bezel).toInt()
+            val scale = maxOf(dstW.toFloat() / wallpaper.width, dstH.toFloat() / wallpaper.height)
+            val srcW = (dstW / scale).toInt().coerceAtMost(wallpaper.width)
+            val srcH = (dstH / scale).toInt().coerceAtMost(wallpaper.height)
+            drawRect(Color.Black, Offset(left, 0f), Size(screenW, screenH))
+            drawImage(
+                wallpaper,
+                srcOffset = IntOffset((wallpaper.width - srcW) / 2, (wallpaper.height - srcH) / 2),
+                srcSize = IntSize(srcW, srcH),
+                dstOffset = IntOffset((left + bezel).toInt(), bezel.toInt()),
+                dstSize = IntSize(dstW, dstH),
+                filterQuality = FilterQuality.High,
+            )
+        }
         drawRect(c.screenEdge, Offset(left, 0f), Size(screenW, screenH), style = Stroke(1.dp.toPx()))
         drawRoundRect(c.laptopBase, Offset(0f, screenH + 2.dp.toPx()), Size(w, 3.dp.toPx()), CornerRadius(2.dp.toPx()))
     }
@@ -176,6 +198,7 @@ fun HomeScreen(
     history: List<History.Entry>,
     macs: List<PairedMac>,
     currentMacId: String?,
+    wallpaper: ImageBitmap?,
     actions: HomeActions,
 ) {
     val c = BridgeTheme.colors
@@ -187,7 +210,7 @@ fun HomeScreen(
         ) {
             TopMenu(actions)
             Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-                MacIllustration(Modifier.padding(top = 4.dp))
+                MacIllustration(Modifier.padding(top = 4.dp), wallpaper = if (connected) wallpaper else null)
                 Spacer(Modifier.height(18.dp))
                 Text(macName, style = MaterialTheme.typography.titleMedium, color = c.text,
                     maxLines = 1, overflow = TextOverflow.Ellipsis)

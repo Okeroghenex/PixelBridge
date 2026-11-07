@@ -14,6 +14,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var notifItem: NSMenuItem!
     private var ringItem: NSMenuItem!
     private lazy var phoneEvents = PhoneEvents(server: server, canNotify: canNotify)
+    private lazy var wallpaper = WallpaperSync(server: server)
     private let adb = AdbTool()
     private lazy var setupModel = PhoneSetupModel(adb: adb)
     private var setupWindow: PhoneSetupWindowController?
@@ -50,7 +51,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         DebugHooks.answer = { [weak self] k in self?.phoneEvents.answer(key: k) }
         DebugHooks.extra = ["setup": { [weak self] in self?.showSetup() },
                             "screen": { [weak self] in self?.showPhoneScreen() }]
-        server.onStateChange = { [weak self] st in self?.update(state: st) }
+        server.onStateChange = { [weak self] st in
+            self?.update(state: st)
+            if case .connected = st { self?.wallpaper.sendNow() } // a phone (re)connected: show it our desktop
+        }
+        wallpaper.start()
         server.onMessage = { [weak self] m in self?.handle(m) }
         server.onFileReceived = { [weak self] url in self?.fileReceived(url) }
         server.start()

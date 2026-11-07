@@ -14,8 +14,8 @@ android {
         applicationId = "app.pixelbridge.android"
         minSdk = 29
         targetSdk = 36
-        versionCode = 5
-        versionName = "1.4"
+        versionCode = 6
+        versionName = "1.5"
     }
 
     // Release key lives outside the repo (~/.linktomac/signing.properties). Without it, release builds
@@ -38,7 +38,9 @@ android {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"))
-            signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
+            // -PdebugSigning: sign with the debug key, to update devices that still have a debug-key install.
+            signingConfig = if (project.hasProperty("debugSigning")) signingConfigs.getByName("debug")
+                else signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
         }
     }
     compileOptions {

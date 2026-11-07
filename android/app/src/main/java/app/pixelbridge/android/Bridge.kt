@@ -268,6 +268,7 @@ object Bridge {
     /** Forget a Mac; disconnects first if it's the one we're connected to. */
     fun forget(id: String) {
         Prefs.removeMac(id)
+        Wallpapers.delete(app, id)
         if (currentMacId == id) reconnect() else wake()
     }
 
@@ -374,6 +375,7 @@ object Bridge {
                     BridgeService.notifyFileReceived(app, f.name, f.uri, f.mime)
                 }
             }
+            "wallpaper" -> currentMacId?.let { Wallpapers.save(app, it, m.body) }
             "notif_reply" -> {
                 val ok = NotificationMirror.instance?.reply(m.header.optString("key"), String(m.body, Charsets.UTF_8)) ?: false
                 sendEvent(Message.of("notif_reply_result", mapOf("key" to m.header.optString("key"), "ok" to ok)))

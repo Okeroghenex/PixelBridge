@@ -43,5 +43,7 @@ Each message is `[u32 BE header length][UTF-8 JSON header][binary body]`. The he
 | `call_action` (Mac→phone) | `key`, `action` (`decline`) | — |
 | `sms_threads_req` / `sms_threads` | reply may have `error` (`permission`) | JSON array of conversations |
 | `sms_messages_req` / `sms_messages` | `threadId` | JSON array of messages, oldest first |
+| `wallpaper` (Mac→phone) | `w`, `h` | JPEG of the Mac's desktop picture (800×500), sent on connect and when it changes |
+| `lock_mac` (phone→Mac) | — | — |
 
 The phone sends `ping` every 20 seconds and the Mac answers with `pong`. A side that hears nothing for 60–70 seconds drops the connection, and the phone reconnects with backoff.

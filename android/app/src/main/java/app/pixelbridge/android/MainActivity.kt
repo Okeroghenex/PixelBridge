@@ -20,7 +20,10 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import android.graphics.BitmapFactory
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
@@ -53,6 +56,8 @@ class MainActivity : ComponentActivity() {
     private var macs by mutableStateOf<List<PairedMac>>(emptyList())
     private var currentMacId by mutableStateOf<String?>(null)
     private var forgetCandidate by mutableStateOf<PairedMac?>(null)
+    private var wallpaper by mutableStateOf<ImageBitmap?>(null)
+    private val wallpaperListener: (String) -> Unit = { id -> if (id == currentMacId) loadWallpaper() }
 
     private val stateListener: (BridgeState) -> Unit = { s ->
         bridgeState = s
@@ -128,7 +133,7 @@ class MainActivity : ComponentActivity() {
                     BackHandler { inSettings = false }
                     SettingsScreen(bridgeState, macName, receiveClipboard, backgroundAllowed, history.isNotEmpty(), features, actions)
                 } else if (paired) {
-                    HomeScreen(bridgeState, macName, history, macs, currentMacId, actions)
+                    HomeScreen(bridgeState, macName, history, macs, currentMacId, wallpaper, actions)
                 } else {
                     PairScreen(bridgeState, onScan = ::scanQr, onEnterCode = { showCodeDialog = true })
                 }
@@ -173,6 +178,7 @@ class MainActivity : ComponentActivity() {
         super.onStart()
         Bridge.addListener(stateListener)
         History.addListener(historyListener)
+        Wallpapers.addListener(wallpaperListener)
     }
 
     override fun onResume() {
@@ -188,6 +194,7 @@ class MainActivity : ComponentActivity() {
     override fun onStop() {
         Bridge.removeListener(stateListener)
         History.removeListener(historyListener)
+        Wallpapers.removeListener(wallpaperListener)
         super.onStop()
     }
 
@@ -198,6 +205,14 @@ class MainActivity : ComponentActivity() {
         currentMacId = Bridge.currentMacId
         val shown = macs.firstOrNull { it.id == currentMacId } ?: Prefs.preferredMac()
         macName = shown?.displayName ?: "Your Mac"
+        loadWallpaper()
+    }
+
+    /** The connected Mac's desktop picture, if it has sent one. */
+    private fun loadWallpaper() {
+        val id = currentMacId
+        wallpaper = id?.let { Wallpapers.file(this, it) }?.takeIf { it.exists() }
+            ?.let { BitmapFactory.decodeFile(it.path)?.asImageBitmap() }
     }
 
     private fun refreshFeatures() {
