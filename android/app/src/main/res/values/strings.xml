@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">PixelBridge</string>
+    <string name="share_label">Mac</string>
+    <string name="tile_label">Send to Mac</string>
+</resources>
