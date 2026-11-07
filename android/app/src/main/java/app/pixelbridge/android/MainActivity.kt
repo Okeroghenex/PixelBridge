@@ -16,6 +16,7 @@ import android.os.PowerManager
 import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
@@ -31,6 +32,7 @@ import app.pixelbridge.android.ui.HomeActions
 import app.pixelbridge.android.ui.HomeScreen
 import app.pixelbridge.android.ui.PairScreen
 import app.pixelbridge.android.ui.PixelBridgeTheme
+import app.pixelbridge.android.ui.SettingsScreen
 import com.google.mlkit.vision.barcode.common.Barcode
 import com.google.mlkit.vision.codescanner.GmsBarcodeScannerOptions
 import com.google.mlkit.vision.codescanner.GmsBarcodeScanning
@@ -46,6 +48,7 @@ class MainActivity : ComponentActivity() {
     private var pendingPair by mutableStateOf<PairingInfo?>(null)
     private var features by mutableStateOf(FeatureState())
     private var showAutoClipHelp by mutableStateOf(false)
+    private var inSettings by mutableStateOf(false)
 
     private val stateListener: (BridgeState) -> Unit = { s ->
         bridgeState = s
@@ -82,6 +85,9 @@ class MainActivity : ComponentActivity() {
 
         val actions = HomeActions(
             sendClipboard = { startActivity(Intent(this, ClipboardSendActivity::class.java)) },
+            lockMac = { Bridge.lockMac { ok -> toast(if (ok) "Mac locked" else "Not connected to your Mac") } },
+            openSettings = { inSettings = true; refreshFeatures() },
+            closeSettings = { inSettings = false },
             sendFiles = { pickFiles.launch(arrayOf("*/*")) },
             scanQr = ::scanQr,
             enterCode = { showCodeDialog = true },
@@ -112,8 +118,11 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             PixelBridgeTheme {
-                if (paired) {
-                    HomeScreen(bridgeState, macName, history, receiveClipboard, backgroundAllowed, features, actions)
+                if (paired && inSettings) {
+                    BackHandler { inSettings = false }
+                    SettingsScreen(bridgeState, macName, receiveClipboard, backgroundAllowed, history.isNotEmpty(), features, actions)
+                } else if (paired) {
+                    HomeScreen(bridgeState, macName, history, actions)
                 } else {
                     PairScreen(bridgeState, onScan = ::scanQr, onEnterCode = { showCodeDialog = true })
                 }

@@ -61,9 +61,29 @@ final class PhoneEvents: NSObject {
         case "call": handleCall(m)
         case "call_action_result": handleCallResult(m)
         case "sms_threads", "sms_messages": messages.handle(m)
+        case "lock_mac": Self.lockScreen()
         default: return false
         }
         return true
+    }
+
+    // MARK: Lock Mac
+
+    /// Locks the screen immediately, the same as Control-Command-Q.
+    static func lockScreen() {
+        typealias LockFn = @convention(c) () -> Int32
+        if let h = dlopen("/System/Library/PrivateFrameworks/login.framework/Versions/Current/login", RTLD_NOW),
+           let sym = dlsym(h, "SACLockScreenImmediate") {
+            _ = unsafeBitCast(sym, to: LockFn.self)()
+            pbLog("Locked screen at the phone's request")
+            return
+        }
+        // Fallback: sleep the display (locks if "require password" is on, which is the macOS default).
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/usr/bin/pmset")
+        p.arguments = ["displaysleepnow"]
+        try? p.run()
+        pbLog("Slept display at the phone's request (lock API unavailable)")
     }
 
     // MARK: Notifications

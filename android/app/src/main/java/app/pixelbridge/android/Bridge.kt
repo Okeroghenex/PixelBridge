@@ -108,6 +108,9 @@ object Bridge {
             History.add(History.Kind.IMAGE_OUT, "Image")
         }
 
+    /** Locks the Mac's screen, like Link to Windows' "Lock PC". */
+    fun lockMac(onResult: ((Boolean) -> Unit)? = null) = enqueue(onResult) { write(Message.of("lock_mac")) }
+
     /** Streams content:// files to the Mac's Downloads folder. */
     fun sendUris(uris: List<Uri>, onResult: ((Boolean) -> Unit)? = null) = enqueue(onResult) {
         val resolver = app.contentResolver

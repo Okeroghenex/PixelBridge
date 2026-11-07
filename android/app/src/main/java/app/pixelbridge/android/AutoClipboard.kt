@@ -65,7 +65,9 @@ object AutoClipboard {
         val pkg = ctx.packageName
         while (true) {
             try {
-                val p = ProcessBuilder("logcat", "-T", "1", "-v", "brief", "ClipboardService:E", "*:S")
+                // Only lines written from now on: replaying an old line would re-send a stale clip.
+                val since = String.format(java.util.Locale.US, "%.3f", System.currentTimeMillis() / 1000.0)
+                val p = ProcessBuilder("logcat", "-v", "epoch", "-T", since, "ClipboardService:E", "*:S")
                     .redirectErrorStream(true).start()
                 p.inputStream.bufferedReader().useLines { lines ->
                     lines.forEach { line ->

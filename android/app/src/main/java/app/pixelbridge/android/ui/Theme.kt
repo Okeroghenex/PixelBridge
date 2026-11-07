@@ -10,80 +10,81 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.ExperimentalTextApi
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.Font
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontVariation
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
+import app.pixelbridge.android.R
 
-/** Colours that Material's scheme doesn't cover: background gradient, pastel icon tiles, status dots. */
+/** Monochrome palette in the spirit of Link to Windows: no accent colours, outlines instead of fills. */
 @Immutable
 data class BridgeColors(
-    val bgTop: Color,
-    val bgBottom: Color,
+    val bg: Color,
     val card: Color,
-    val cardBorder: Color,
+    val border: Color,
     val text: Color,
     val muted: Color,
-    val blueTile: Color, val blueIcon: Color,
-    val greenTile: Color, val greenIcon: Color,
-    val violetTile: Color, val violetIcon: Color,
-    val amberTile: Color, val amberIcon: Color,
-    val online: Color,
-    val waiting: Color,
-    val offline: Color,
-    val laptopBezel: Color,
+    val faint: Color,
+    val bar: Color,
+    val screen: Color,
+    val screenEdge: Color,
     val laptopBase: Color,
     val dark: Boolean,
 )
 
-private val Light = BridgeColors(
-    bgTop = Color(0xFFD9E2FF), bgBottom = Color(0xFFF6F7FB),
-    card = Color.White, cardBorder = Color(0xFFE5E8F2),
-    text = Color(0xFF12152A), muted = Color(0xFF6A7090),
-    blueTile = Color(0xFFE6EEFF), blueIcon = Color(0xFF3E5BFF),
-    greenTile = Color(0xFFE3F6EC), greenIcon = Color(0xFF16955B),
-    violetTile = Color(0xFFEFE9FF), violetIcon = Color(0xFF7448F5),
-    amberTile = Color(0xFFFFF1DD), amberIcon = Color(0xFFD9820B),
-    online = Color(0xFF1FB36B), waiting = Color(0xFFF0A020), offline = Color(0xFFE5484D),
-    laptopBezel = Color(0xFF1C2131), laptopBase = Color(0xFFC8CDDA),
-    dark = false,
-)
-
 private val Dark = BridgeColors(
-    bgTop = Color(0xFF1C2448), bgBottom = Color(0xFF0D1120),
-    card = Color(0xFF161B2D), cardBorder = Color(0xFF252B44),
-    text = Color(0xFFEEF0FA), muted = Color(0xFF9AA1BF),
-    blueTile = Color(0xFF1F2A55), blueIcon = Color(0xFF8DA2FF),
-    greenTile = Color(0xFF15372A), greenIcon = Color(0xFF5BD69A),
-    violetTile = Color(0xFF2B2152), violetIcon = Color(0xFFB59BFF),
-    amberTile = Color(0xFF3A2C14), amberIcon = Color(0xFFFFC266),
-    online = Color(0xFF34D17F), waiting = Color(0xFFFFB547), offline = Color(0xFFFF6B6F),
-    laptopBezel = Color(0xFF05070D), laptopBase = Color(0xFF3B4260),
-    dark = true,
+    bg = Color(0xFF000000), card = Color(0xFF161616), border = Color(0xFF2C2C2C),
+    text = Color(0xFFF2F2F2), muted = Color(0xFF9E9E9E), faint = Color(0xFF5E5E5E),
+    bar = Color(0xFF1F1F1F), screen = Color(0xFF2A2A2A), screenEdge = Color(0xFF4A4A4A),
+    laptopBase = Color(0xFFCFCFCF), dark = true,
 )
 
-val LocalBridgeColors = staticCompositionLocalOf { Light }
+private val Light = BridgeColors(
+    bg = Color(0xFFF7F7F7), card = Color(0xFFFFFFFF), border = Color(0xFFE0E0E0),
+    text = Color(0xFF141414), muted = Color(0xFF6B6B6B), faint = Color(0xFFADADAD),
+    bar = Color(0xFFEFEFEF), screen = Color(0xFF3A3A3A), screenEdge = Color(0xFF1E1E1E),
+    laptopBase = Color(0xFFBDBDBD), dark = false,
+)
 
-private val AppTypography = Typography().let { t ->
-    t.copy(
-        headlineMedium = t.headlineMedium.copy(fontWeight = FontWeight.Bold, letterSpacing = (-0.5).sp),
-        titleLarge = t.titleLarge.copy(fontWeight = FontWeight.SemiBold),
-        titleMedium = t.titleMedium.copy(fontWeight = FontWeight.SemiBold),
-        labelLarge = t.labelLarge.copy(fontWeight = FontWeight.SemiBold, fontSize = 16.sp),
-    )
-}
+val LocalBridgeColors = staticCompositionLocalOf { Dark }
 
-val Brand = Color(0xFF3E5BFF)
+@OptIn(ExperimentalTextApi::class)
+private fun sansFlex(weight: Int) = Font(
+    R.font.google_sans_flex,
+    weight = FontWeight(weight),
+    variationSettings = FontVariation.Settings(FontVariation.weight(weight)),
+)
+
+/** Google Sans Flex, Google's own UI typeface (OFL), bundled as one variable font. */
+val GoogleSansFlex = FontFamily(sansFlex(400), sansFlex(500), sansFlex(600))
+
+private fun style(size: Int, weight: Int = 400, line: Int = (size * 1.35f).toInt()) =
+    TextStyle(fontFamily = GoogleSansFlex, fontSize = size.sp, fontWeight = FontWeight(weight), lineHeight = line.sp)
+
+private val AppTypography = Typography(
+    headlineMedium = style(26, 500),
+    titleLarge = style(22, 400),
+    titleMedium = style(18, 500),
+    bodyLarge = style(16),
+    bodyMedium = style(14),
+    bodySmall = style(13),
+    labelLarge = style(15, 500),
+    labelMedium = style(13),
+)
 
 @Composable
 fun PixelBridgeTheme(content: @Composable () -> Unit) {
     val dark = isSystemInDarkTheme()
     val c = if (dark) Dark else Light
     val scheme = if (dark) {
-        darkColorScheme(primary = Color(0xFF8DA2FF), onPrimary = Color(0xFF0B1240),
-            surface = c.card, background = c.bgBottom, onSurface = c.text, onBackground = c.text)
+        darkColorScheme(primary = c.text, onPrimary = c.bg, surface = c.card, background = c.bg,
+            onSurface = c.text, onBackground = c.text, surfaceContainer = c.card, outline = c.border)
     } else {
-        lightColorScheme(primary = Brand, onPrimary = Color.White,
-            surface = c.card, background = c.bgBottom, onSurface = c.text, onBackground = c.text)
+        lightColorScheme(primary = c.text, onPrimary = c.bg, surface = c.card, background = c.bg,
+            onSurface = c.text, onBackground = c.text, surfaceContainer = c.card, outline = c.border)
     }
     CompositionLocalProvider(LocalBridgeColors provides c) {
         MaterialTheme(colorScheme = scheme, typography = AppTypography, content = content)
@@ -93,5 +94,3 @@ fun PixelBridgeTheme(content: @Composable () -> Unit) {
 object BridgeTheme {
     val colors: BridgeColors @Composable get() = LocalBridgeColors.current
 }
-
-val Muted: TextStyle @Composable get() = MaterialTheme.typography.bodyMedium.copy(color = BridgeTheme.colors.muted)
