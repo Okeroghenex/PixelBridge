@@ -59,8 +59,8 @@ class Discovery(context: Context, private val onChange: () -> Unit) {
 
     private fun found(name: String, host: String?, port: Int) {
         if (host == null) return
-        services[name] = host to port
-        onChange()
+        // Only wake the connection loop for new or moved Macs, not repeat sightings.
+        if (services.put(name, host to port) != host to port) onChange()
     }
 
     private fun resolve(info: NsdServiceInfo) {

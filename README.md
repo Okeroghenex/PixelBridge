@@ -2,6 +2,8 @@
 
 Shared clipboard and file transfer between a Mac and an Android phone (built for the Pixel 10 Pro) over your local Wi-Fi. No cloud and no account. Everything is end-to-end encrypted with a key you pair once.
 
+![PixelBridge on Android: pairing, home, scrolled, dark mode](docs/screenshots/overview.png)
+
 | | Mac → Pixel | Pixel → Mac |
 |---|---|---|
 | **Clipboard** | Automatic: copy on the Mac, paste on the phone | One tap: the **Send to Mac** Quick Settings tile, the notification button, or **Share → Mac** in the copy bubble |
@@ -32,7 +34,11 @@ mv ~/Desktop/PixelBridge/mac/dist/PixelBridge.app /Applications/ && open /Applic
 1. Install [Android Studio](https://developer.android.com/studio) and open the `android/` folder (**File → Open**). The first Gradle sync downloads the SDK and dependencies.
 2. On the Pixel: **Settings → About phone →** tap **Build number** 7 times, then **System → Developer options → USB debugging** on.
 3. Plug in the phone, select it in the device dropdown, and press **Run ▶**.
-   (Or **Build → Build App Bundle(s)/APK(s) → Build APK(s)** and copy `app/build/outputs/apk/debug/app-debug.apk` to the phone.)
+   Or build a small (about 2.5 MB) installable APK from the terminal, then copy `android/app/build/outputs/apk/release/app-release.apk` to the phone:
+
+   ```bash
+   cd ~/Desktop/PixelBridge/android && ./gradlew assembleRelease
+   ```
 
 ## 3. Pair
 

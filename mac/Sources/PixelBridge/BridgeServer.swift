@@ -3,7 +3,7 @@ import BridgeCore
 import Foundation
 import Network
 
-/// Listens on the LAN (advertised over Bonjour) and keeps one authenticated phone connection.
+/// Listens on the LAN (advertised over Bonjour) and keeps authenticated phone connections (one per device).
 final class BridgeServer: PeerDelegate {
     enum State: Equatable {
         case starting
@@ -15,7 +15,7 @@ final class BridgeServer: PeerDelegate {
     let queue = DispatchQueue(label: "pixelbridge.server")
     private var listener: NWListener?
     private var pending: [ObjectIdentifier: Peer] = [:]
-    private(set) var phone: Peer?
+    private var phones: [Peer] = []
     private var receivers: [String: IncomingFile] = [:]
     private var watchdog: DispatchSourceTimer?
     private let secretProvider: () -> Data
@@ -48,7 +48,7 @@ final class BridgeServer: PeerDelegate {
     /// Drops the current phone (e.g. after the pairing key was reset).
     func disconnectAll() {
         queue.async { [self] in
-            phone?.close()
+            phones.forEach { $0.close() }
             pending.values.forEach { $0.close() }
         }
     }
@@ -69,7 +69,7 @@ final class BridgeServer: PeerDelegate {
                 switch st {
                 case .ready:
                     self.log("Listening on port \(l.port?.rawValue ?? 0)")
-                    if self.phone == nil { self.state = .waiting(port: l.port?.rawValue ?? port) }
+                    if self.phones.isEmpty { self.state = .waiting(port: l.port?.rawValue ?? port) }
                 case .failed(let err):
                     self.log("Listener failed: \(err)")
                     l.cancel()
@@ -106,8 +106,8 @@ final class BridgeServer: PeerDelegate {
             guard let self else { return }
             let now = Date()
             // The phone pings every 20s; drop silent connections so a new one can take over.
-            if let p = self.phone, now.timeIntervalSince(p.lastReceived) > 70 {
-                self.log("Phone went silent; dropping connection")
+            for p in self.phones where now.timeIntervalSince(p.lastReceived) > 70 {
+                self.log("\(p.remoteName) went silent; dropping connection")
                 p.close()
             }
             for p in self.pending.values where now.timeIntervalSince(p.lastReceived) > 15 { p.close() }
@@ -119,28 +119,36 @@ final class BridgeServer: PeerDelegate {
     // MARK: Sending
 
     func send(_ message: Message) {
-        queue.async { [self] in phone?.send(message) }
+        queue.async { [self] in phones.forEach { $0.send(message) } }
     }
 
     func sendFiles(_ urls: [URL], progress: ((String, Double) -> Void)? = nil, completion: ((Bool) -> Void)? = nil) {
         queue.async { [self] in
-            guard let phone else { DispatchQueue.main.async { completion?(false) }; return }
-            var remaining = urls
-            func next() {
-                guard !remaining.isEmpty else { DispatchQueue.main.async { completion?(true) }; return }
-                let url = remaining.removeFirst()
-                phone.sendFile(at: url, mime: MimeTypes.forURL(url), progress: { p in
-                    DispatchQueue.main.async { progress?(url.lastPathComponent, p) }
-                }, completion: { err in
-                    if let err {
-                        self.log("Sending \(url.lastPathComponent) failed: \(err)")
-                        DispatchQueue.main.async { completion?(false) }
-                        return
-                    }
-                    next()
-                })
+            let targets = phones
+            guard !targets.isEmpty else { DispatchQueue.main.async { completion?(false) }; return }
+            let group = DispatchGroup()
+            var allOK = true
+            for (i, phone) in targets.enumerated() {
+                group.enter()
+                var remaining = urls
+                func next() {
+                    guard !remaining.isEmpty else { group.leave(); return }
+                    let url = remaining.removeFirst()
+                    phone.sendFile(at: url, mime: MimeTypes.forURL(url), progress: { p in
+                        // Report progress for the first phone only, to keep the menu readable.
+                        if i == 0 { DispatchQueue.main.async { progress?(url.lastPathComponent, p) } }
+                    }, completion: { err in
+                        if let err {
+                            self.log("Sending \(url.lastPathComponent) to \(phone.remoteName) failed: \(err)")
+                            self.queue.async { allOK = false; group.leave() }
+                            return
+                        }
+                        next()
+                    })
+                }
+                next()
             }
-            next()
+            group.notify(queue: queue) { DispatchQueue.main.async { completion?(allOK) } }
         }
     }
 
@@ -148,31 +156,33 @@ final class BridgeServer: PeerDelegate {
 
     func peerDidBecomeReady(_ peer: Peer) {
         pending.removeValue(forKey: ObjectIdentifier(peer))
-        if let old = phone, old !== peer {
+        // A device that reconnects replaces only its own stale connection.
+        for old in phones where old.remoteName == peer.remoteName {
             old.delegate = nil
             old.close()
         }
-        phone = peer
+        phones.removeAll { $0.remoteName == peer.remoteName }
+        phones.append(peer)
         log("Paired device connected: \(peer.remoteName)")
-        state = .connected(name: peer.remoteName)
+        updateState()
     }
 
     func peer(_ peer: Peer, didReceive message: Message) {
-        guard peer === phone else { return }
+        guard phones.contains(where: { $0 === peer }) else { return }
         switch message.type {
         case "file_start":
             guard let id = message.string("id") else { return }
             do {
-                receivers[id] = try IncomingFile(name: message.string("name") ?? "file",
+                receivers[key(peer, id)] = try IncomingFile(name: message.string("name") ?? "file",
                                                  expectedSize: message.int("size") ?? -1)
             } catch {
                 log("Can't save incoming file: \(error)")
             }
         case "file_chunk":
             guard let id = message.string("id") else { return }
-            receivers[id]?.write(message.body)
+            receivers[key(peer, id)]?.write(message.body)
         case "file_end":
-            guard let id = message.string("id"), let r = receivers.removeValue(forKey: id) else { return }
+            guard let id = message.string("id"), let r = receivers.removeValue(forKey: key(peer, id)) else { return }
             if let url = r.finish() {
                 DispatchQueue.main.async { self.onFileReceived?(url) }
             }
@@ -184,12 +194,22 @@ final class BridgeServer: PeerDelegate {
     func peerDidClose(_ peer: Peer, error: Error?) {
         pending.removeValue(forKey: ObjectIdentifier(peer))
         if let error { log("Connection closed: \(error)") }
-        if peer === phone {
-            phone = nil
-            receivers.values.forEach { $0.abort() }
-            receivers.removeAll()
-            state = .waiting(port: port)
+        if phones.contains(where: { $0 === peer }) {
+            phones.removeAll { $0 === peer }
+            let prefix = "\(ObjectIdentifier(peer).hashValue)/"
+            for (k, r) in receivers where k.hasPrefix(prefix) {
+                r.abort()
+                receivers.removeValue(forKey: k)
+            }
+            updateState()
         }
+    }
+
+    private func key(_ peer: Peer, _ id: String) -> String { "\(ObjectIdentifier(peer).hashValue)/\(id)" }
+
+    private func updateState() {
+        if phones.isEmpty { state = .waiting(port: port) }
+        else { state = .connected(name: phones.map(\.remoteName).joined(separator: ", ")) }
     }
 
     private func log(_ s: String) {

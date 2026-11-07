@@ -1,9 +1,10 @@
 package app.pixelbridge.android
 
 import android.Manifest
-import android.annotation.SuppressLint
+import android.app.DownloadManager
 import android.app.StatusBarManager
 import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.ComponentName
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -13,28 +14,41 @@ import android.os.Build
 import android.os.Bundle
 import android.os.PowerManager
 import android.provider.Settings
-import android.text.InputType
-import android.view.View
-import android.widget.EditText
-import android.widget.LinearLayout
-import android.widget.TextView
 import android.widget.Toast
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.appcompat.app.AppCompatActivity
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
-import com.google.android.material.button.MaterialButton
-import com.google.android.material.dialog.MaterialAlertDialogBuilder
-import com.google.android.material.materialswitch.MaterialSwitch
+import app.pixelbridge.android.ui.ConfirmPairDialog
+import app.pixelbridge.android.ui.EnterCodeDialog
+import app.pixelbridge.android.ui.HomeActions
+import app.pixelbridge.android.ui.HomeScreen
+import app.pixelbridge.android.ui.PairScreen
+import app.pixelbridge.android.ui.PixelBridgeTheme
 import com.google.mlkit.vision.barcode.common.Barcode
 import com.google.mlkit.vision.codescanner.GmsBarcodeScannerOptions
 import com.google.mlkit.vision.codescanner.GmsBarcodeScanning
 
-class MainActivity : AppCompatActivity() {
-    private lateinit var status: TextView
-    private lateinit var detail: TextView
-    private lateinit var connectedActions: View
-    private lateinit var pairButton: MaterialButton
-    private val listener: (BridgeState) -> Unit = { render(it) }
+class MainActivity : ComponentActivity() {
+    private var bridgeState by mutableStateOf<BridgeState>(BridgeState.Searching)
+    private var history by mutableStateOf<List<History.Entry>>(emptyList())
+    private var paired by mutableStateOf(false)
+    private var macName by mutableStateOf("Your Mac")
+    private var receiveClipboard by mutableStateOf(true)
+    private var backgroundAllowed by mutableStateOf(true)
+    private var showCodeDialog by mutableStateOf(false)
+    private var pendingPair by mutableStateOf<PairingInfo?>(null)
+
+    private val stateListener: (BridgeState) -> Unit = { s ->
+        bridgeState = s
+        paired = Prefs.secret != null
+        macName = Prefs.macName ?: "Your Mac"
+    }
+    private val historyListener: (List<History.Entry>) -> Unit = { history = it }
 
     private val pickFiles = registerForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
         if (uris.isEmpty()) return@registerForActivityResult
@@ -44,39 +58,64 @@ class MainActivity : AppCompatActivity() {
             .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         i.clipData = clip
         ContextCompat.startForegroundService(this, i)
-        Toast.makeText(this, "Sending to Mac…", Toast.LENGTH_SHORT).show()
+        toast("Sending to Mac…")
     }
 
     private val notifPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) {}
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        enableEdgeToEdge()
         super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_main)
-        Prefs.init(this)
-        status = findViewById(R.id.status)
-        detail = findViewById(R.id.detail)
-        connectedActions = findViewById(R.id.connected_actions)
-        pairButton = findViewById(R.id.btn_pair)
+        Bridge.init(this)
+        paired = Prefs.secret != null
+        receiveClipboard = Prefs.receiveClipboard
 
-        pairButton.setOnClickListener { scanQr() }
-        findViewById<MaterialButton>(R.id.btn_code).setOnClickListener { enterCodeDialog() }
-        findViewById<MaterialButton>(R.id.btn_send_clip).setOnClickListener {
-            startActivity(Intent(this, ClipboardSendActivity::class.java))
-        }
-        findViewById<MaterialButton>(R.id.btn_send_files).setOnClickListener { pickFiles.launch(arrayOf("*/*")) }
-        findViewById<MaterialButton>(R.id.btn_tile).setOnClickListener { addTile() }
-        findViewById<MaterialButton>(R.id.btn_battery).setOnClickListener { askBatteryExemption() }
-        findViewById<MaterialButton>(R.id.btn_reconnect).setOnClickListener { Bridge.reconnect() }
-        findViewById<MaterialSwitch>(R.id.switch_receive).apply {
-            isChecked = Prefs.receiveClipboard
-            setOnCheckedChangeListener { _, on -> Prefs.receiveClipboard = on }
+        val actions = HomeActions(
+            sendClipboard = { startActivity(Intent(this, ClipboardSendActivity::class.java)) },
+            sendFiles = { pickFiles.launch(arrayOf("*/*")) },
+            scanQr = ::scanQr,
+            enterCode = { showCodeDialog = true },
+            reconnect = { Bridge.reconnect(); toast("Reconnecting…") },
+            unpair = {
+                Prefs.unpair(); paired = false; Bridge.reconnect()
+            },
+            openReceived = ::openDownloads,
+            addTile = ::addTile,
+            allowBackground = ::askBatteryExemption,
+            setReceiveClipboard = { Prefs.receiveClipboard = it; receiveClipboard = it },
+            openEntry = ::openEntry,
+            clearHistory = { History.clear() },
+        )
+
+        setContent {
+            PixelBridgeTheme {
+                if (paired) {
+                    HomeScreen(bridgeState, macName, history, receiveClipboard, backgroundAllowed, actions)
+                } else {
+                    PairScreen(bridgeState, onScan = ::scanQr, onEnterCode = { showCodeDialog = true })
+                }
+                if (showCodeDialog) {
+                    EnterCodeDialog(
+                        initialHost = Prefs.host.orEmpty(),
+                        onDismiss = { showCodeDialog = false },
+                        onPair = { code, host -> showCodeDialog = false; pairWithCode(code, host) },
+                    )
+                }
+                pendingPair?.let { info ->
+                    ConfirmPairDialog(
+                        name = info.name ?: "this Mac",
+                        onDismiss = { pendingPair = null },
+                        onConfirm = { pendingPair = null; applyPairing(info) },
+                    )
+                }
+            }
         }
 
         if (Build.VERSION.SDK_INT >= 33 &&
             checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
             notifPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
-        if (Prefs.secret != null) BridgeService.start(this)
+        if (paired) BridgeService.start(this)
         handleDeepLink(intent)
     }
 
@@ -87,27 +126,22 @@ class MainActivity : AppCompatActivity() {
 
     override fun onStart() {
         super.onStart()
-        Bridge.init(this)
-        Bridge.addListener(listener)
+        Bridge.addListener(stateListener)
+        History.addListener(historyListener)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        backgroundAllowed = getSystemService(PowerManager::class.java).isIgnoringBatteryOptimizations(packageName)
     }
 
     override fun onStop() {
-        Bridge.removeListener(listener)
+        Bridge.removeListener(stateListener)
+        History.removeListener(historyListener)
         super.onStop()
     }
 
-    private fun render(s: BridgeState) {
-        status.text = BridgeService.statusText(s)
-        detail.text = when (s) {
-            is BridgeState.Connected -> "Copy on your Mac → paste here. Use the tile, share sheet or button below to send the other way."
-            BridgeState.NotPaired -> "Open PixelBridge on your Mac, choose “Pair Phone…”, then scan the QR code."
-            BridgeState.Searching -> "Make sure the Mac app is running and both devices are on the same Wi-Fi."
-            is BridgeState.Connecting -> s.target
-            is BridgeState.Error -> "Choose “Pair Phone…” on the Mac and scan the code again."
-        }
-        connectedActions.visibility = if (s is BridgeState.Connected) View.VISIBLE else View.GONE
-        pairButton.text = if (Prefs.secret == null) "Scan pairing QR code" else "Pair again"
-    }
+    private fun toast(s: String) = Toast.makeText(this, s, Toast.LENGTH_SHORT).show()
 
     // region Pairing
 
@@ -116,10 +150,9 @@ class MainActivity : AppCompatActivity() {
         GmsBarcodeScanning.getClient(this, options).startScan()
             .addOnSuccessListener { code ->
                 val info = code.rawValue?.let { Pairing.parseUri(it) }
-                if (info == null) Toast.makeText(this, "That isn't a PixelBridge code", Toast.LENGTH_LONG).show()
-                else applyPairing(info)
+                if (info == null) toast("That isn't a PixelBridge code") else applyPairing(info)
             }
-            .addOnFailureListener { Toast.makeText(this, "Scanner unavailable: ${it.message}", Toast.LENGTH_LONG).show() }
+            .addOnFailureListener { toast("Scanner unavailable: ${it.message}") }
     }
 
     /** Scanning the Mac's QR with the Pixel camera opens pixelbridge://pair… here; confirm before trusting it. */
@@ -127,77 +160,62 @@ class MainActivity : AppCompatActivity() {
         val data: Uri = intent?.data ?: return
         val info = Pairing.parseUri(data.toString()) ?: return
         setIntent(Intent(this, MainActivity::class.java))
-        MaterialAlertDialogBuilder(this)
-            .setTitle("Pair with ${info.name ?: "this Mac"}?")
-            .setMessage("Only continue if this code is showing on your own Mac.")
-            .setPositiveButton("Pair") { _, _ -> applyPairing(info) }
-            .setNegativeButton("Cancel", null)
-            .show()
+        pendingPair = info
     }
 
-    private fun enterCodeDialog() {
-        val pad = (20 * resources.displayMetrics.density).toInt()
-        val code = EditText(this).apply {
-            hint = "ABCD-EFGH-…"
-            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
-        }
-        val host = EditText(this).apply {
-            hint = "Mac IP address (optional), e.g. 192.168.1.20"
-            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
-            setText(Prefs.host.orEmpty())
-        }
-        val box = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(pad, pad / 2, pad, 0)
-            addView(code); addView(host)
-        }
-        MaterialAlertDialogBuilder(this)
-            .setTitle("Enter pairing code")
-            .setMessage("Shown under the QR code in the Mac app.")
-            .setView(box)
-            .setPositiveButton("Pair") { _, _ ->
-                val secret = Pairing.secretFromCode(code.text.toString())
-                if (secret == null) {
-                    Toast.makeText(this, "That code doesn't look right", Toast.LENGTH_LONG).show()
-                } else {
-                    val (h, p) = host.text.toString().trim().let { t ->
-                        if (t.isEmpty()) null to Proto.DEFAULT_PORT
-                        else t.substringBefore(':') to (t.substringAfter(':', "").toIntOrNull() ?: Proto.DEFAULT_PORT)
-                    }
-                    applyPairing(PairingInfo(secret, h, p, null))
-                }
-            }
-            .setNegativeButton("Cancel", null)
-            .show()
+    private fun pairWithCode(code: String, hostText: String) {
+        val secret = Pairing.secretFromCode(code)
+        if (secret == null) { toast("That code doesn't look right"); return }
+        val t = hostText.trim()
+        val host = t.substringBefore(':').ifEmpty { null }
+        val port = t.substringAfter(':', "").toIntOrNull() ?: Proto.DEFAULT_PORT
+        applyPairing(PairingInfo(secret, host, port, null))
     }
 
     private fun applyPairing(info: PairingInfo) {
         Prefs.pair(info)
+        paired = true
+        macName = info.name ?: "Your Mac"
         BridgeService.start(this)
         Bridge.reconnect()
-        Toast.makeText(this, "Paired. Connecting…", Toast.LENGTH_SHORT).show()
-        render(Bridge.state)
     }
 
     // endregion
 
-    private fun addTile() {
-        if (Build.VERSION.SDK_INT >= 33) {
-            getSystemService(StatusBarManager::class.java).requestAddTileService(
-                ComponentName(this, ClipTileService::class.java), "Send clipboard to Mac",
-                Icon.createWithResource(this, R.drawable.ic_bridge), mainExecutor) {}
-        } else {
-            Toast.makeText(this, "Edit Quick Settings and drag in “Send to Mac”", Toast.LENGTH_LONG).show()
+    private fun openEntry(e: History.Entry) {
+        when {
+            e.kind == History.Kind.FILE_IN && e.uri != null -> {
+                val uri = Uri.parse(e.uri)
+                val view = Intent(Intent.ACTION_VIEW).setDataAndType(uri, contentResolver.getType(uri))
+                    .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                try { startActivity(view) } catch (_: Exception) { openDownloads() }
+            }
+            e.kind == History.Kind.CLIP_IN || e.kind == History.Kind.CLIP_OUT -> {
+                getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("PixelBridge", e.title))
+                if (Build.VERSION.SDK_INT < 33) toast("Copied")
+            }
+            else -> Unit
         }
     }
 
-    @SuppressLint("BatteryLife")
-    private fun askBatteryExemption() {
-        val pm = getSystemService(PowerManager::class.java)
-        if (pm.isIgnoringBatteryOptimizations(packageName)) {
-            Toast.makeText(this, "Already allowed to run in the background", Toast.LENGTH_SHORT).show()
-            return
+    private fun openDownloads() {
+        try { startActivity(Intent(DownloadManager.ACTION_VIEW_DOWNLOADS)) } catch (_: Exception) { toast("Open Files › Downloads › PixelBridge") }
+    }
+
+    private fun addTile() {
+        if (Build.VERSION.SDK_INT >= 33) {
+            getSystemService(StatusBarManager::class.java).requestAddTileService(
+                ComponentName(this, ClipTileService::class.java), "Send to Mac",
+                Icon.createWithResource(this, R.drawable.ic_bridge), mainExecutor) { result ->
+                if (result == StatusBarManager.TILE_ADD_REQUEST_RESULT_TILE_ALREADY_ADDED) toast("The tile is already in Quick Settings")
+            }
+        } else {
+            toast("Edit Quick Settings and drag in “Send to Mac”")
         }
+    }
+
+    private fun askBatteryExemption() {
+        @Suppress("BatteryLife")
         startActivity(Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:$packageName")))
     }
 }

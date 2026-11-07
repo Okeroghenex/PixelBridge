@@ -71,6 +71,7 @@ object Bridge {
         if (::app.isInitialized) return
         app = context.applicationContext
         Prefs.init(app)
+        History.init(app)
     }
 
     @Synchronized
@@ -96,10 +97,16 @@ object Bridge {
     // region Sending
 
     fun sendText(text: String, onResult: ((Boolean) -> Unit)? = null) =
-        enqueue(onResult) { write(Message.of("clip_text", body = text.toByteArray(Charsets.UTF_8))) }
+        enqueue(onResult) {
+            write(Message.of("clip_text", body = text.toByteArray(Charsets.UTF_8)))
+            History.add(History.Kind.CLIP_OUT, text)
+        }
 
     fun sendClipImage(bytes: ByteArray, mime: String, onResult: ((Boolean) -> Unit)? = null) =
-        enqueue(onResult) { write(Message.of("clip_image", mapOf("mime" to mime), bytes)) }
+        enqueue(onResult) {
+            write(Message.of("clip_image", mapOf("mime" to mime), bytes))
+            History.add(History.Kind.IMAGE_OUT, "Image")
+        }
 
     /** Streams content:// files to the Mac's Downloads folder. */
     fun sendUris(uris: List<Uri>, onResult: ((Boolean) -> Unit)? = null) = enqueue(onResult) {
@@ -135,6 +142,7 @@ object Bridge {
                     }
                 }
                 write(Message.of("file_end", mapOf("id" to id)))
+                History.add(History.Kind.FILE_OUT, name, uri.toString())
             }
         }
         BridgeService.clearProgress(app)
@@ -201,9 +209,9 @@ object Bridge {
             }
             var authFailed = false
             for ((host, port) in targets) {
+                val started = System.currentTimeMillis()
                 try {
                     connectAndServe(host, port, secret)
-                    backoff = 1000L
                 } catch (e: AEADBadTagException) {
                     authFailed = true
                     Log.w(TAG, "auth failed at $host:$port")
@@ -211,6 +219,11 @@ object Bridge {
                     Log.i(TAG, "connection to $host:$port ended: $e")
                 }
                 if (!running) return
+                // Only a connection that actually lasted resets the backoff; quick drops slow us down.
+                if (state is BridgeState.Connected && System.currentTimeMillis() - started > 10_000) {
+                    backoff = 1000L
+                    break
+                }
             }
             setState(if (authFailed) BridgeState.Error("Pairing code rejected — pair again") else BridgeState.Searching)
             discovery?.start()
@@ -304,12 +317,16 @@ object Bridge {
         when (m.type) {
             "clip_text" -> if (Prefs.receiveClipboard) {
                 val text = String(m.body, Charsets.UTF_8)
+                History.add(History.Kind.CLIP_IN, text)
                 main.post {
                     app.getSystemService(ClipboardManager::class.java)
                         .setPrimaryClip(ClipData.newPlainText("From Mac", text))
                 }
             }
-            "clip_image" -> if (Prefs.receiveClipboard) putImageOnClipboard(m.body)
+            "clip_image" -> if (Prefs.receiveClipboard) {
+                putImageOnClipboard(m.body)
+                History.add(History.Kind.IMAGE_IN, "Image")
+            }
             "file_start" -> {
                 val id = m.header.optString("id")
                 val f = IncomingFile.create(app, m.header.optString("name", "file"),
@@ -319,7 +336,10 @@ object Bridge {
             "file_chunk" -> synchronized(incoming) { incoming[m.header.optString("id")] }?.write(m.body)
             "file_end" -> {
                 val f = synchronized(incoming) { incoming.remove(m.header.optString("id")) } ?: return
-                if (f.finish()) BridgeService.notifyFileReceived(app, f.name, f.uri, f.mime)
+                if (f.finish()) {
+                    History.add(History.Kind.FILE_IN, f.name, f.uri.toString())
+                    BridgeService.notifyFileReceived(app, f.name, f.uri, f.mime)
+                }
             }
         }
     }
