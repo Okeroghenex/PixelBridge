@@ -32,6 +32,8 @@ class NotificationMirror : NotificationListenerService() {
     private val iconCache = ConcurrentHashMap<String, ByteArray>()
     /** Key of the call notification we're tracking, and whether it has been picked up. */
     @Volatile private var callKey: String? = null
+    private val main = android.os.Handler(android.os.Looper.getMainLooper())
+    private var pendingEnd = Runnable {}
     @Volatile private var inCall = false
 
     override fun onListenerConnected() {
@@ -50,9 +52,17 @@ class NotificationMirror : NotificationListenerService() {
     override fun onNotificationRemoved(sbn: StatusBarNotification) {
         val key = sbn.key
         if (key == callKey) {
-            callKey = null
-            inCall = false
-            Bridge.sendEvent(Message.of("call", mapOf("state" to "ended", "key" to key)))
+            // The phone app often cancels and re-posts its call notification (e.g. when the full-screen
+            // call UI opens). Only report "ended" if no call notification comes back shortly.
+            main.removeCallbacks(pendingEnd)
+            pendingEnd = Runnable {
+                if (callKey == key) {
+                    callKey = null
+                    inCall = false
+                    Bridge.sendEvent(Message.of("call", mapOf("state" to "ended", "key" to key)))
+                }
+            }
+            main.postDelayed(pendingEnd, 1500)
         }
         if (active.remove(key) != null) {
             lastSent.remove(key)
@@ -63,7 +73,7 @@ class NotificationMirror : NotificationListenerService() {
     private fun handlePosted(sbn: StatusBarNotification) {
         if (sbn.packageName == packageName) return
         val n = sbn.notification
-        if (n.category == Notification.CATEGORY_CALL) { handleCall(sbn); return }
+        if (isCall(n)) { handleCall(sbn); return }
 
         if (!Prefs.mirrorNotifications) return
         if (n.flags and Notification.FLAG_GROUP_SUMMARY != 0) return
@@ -108,8 +118,15 @@ class NotificationMirror : NotificationListenerService() {
 
     // region Calls
 
+    /** Call notifications don't always keep category=call when re-posted; their CallStyle layout is reliable. */
+    private fun isCall(n: Notification): Boolean =
+        n.category == Notification.CATEGORY_CALL ||
+            n.extras.getString(Notification.EXTRA_TEMPLATE) == "android.app.Notification\$CallStyle" ||
+            n.extras.containsKey("android.callType")
+
     private fun handleCall(sbn: StatusBarNotification) {
         if (!Prefs.callAlerts) return
+        main.removeCallbacks(pendingEnd) // a call notification is (still) here, so the call hasn't ended
         val n = sbn.notification
         val ex = n.extras
         val callType = ex.getInt("android.callType", 0) // 1 incoming, 2 ongoing, 3 screening
@@ -187,6 +204,9 @@ class NotificationMirror : NotificationListenerService() {
      */
     @SuppressLint("MissingPermission")
     fun answer(key: String): Boolean {
+        // Only answer the call this phone reported. (Several phones can be linked to one Mac,
+        // and acceptRingingCall() would otherwise pick up whatever is ringing here.)
+        if (key != callKey || inCall) return false
         if (canAcceptDirectly()) {
             try {
                 @Suppress("DEPRECATION")
@@ -207,6 +227,7 @@ class NotificationMirror : NotificationListenerService() {
 
     /** Declines a ringing call, or hangs up an answered one. */
     fun decline(key: String): Boolean {
+        if (key != callKey) return false
         val sbn = active[key] ?: return false
         val action = declineAction(sbn.notification) ?: return false
         return try { action.actionIntent.send(); true } catch (e: Exception) { Log.w(TAG, "decline", e); false }
