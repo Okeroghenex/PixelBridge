@@ -258,7 +258,7 @@ class MainActivity : ComponentActivity() {
         if (Build.VERSION.SDK_INT >= 33) {
             getSystemService(StatusBarManager::class.java).requestAddTileService(
                 ComponentName(this, ClipTileService::class.java), "Send to Mac",
-                Icon.createWithResource(this, R.drawable.ic_bridge), mainExecutor) { result ->
+                Icon.createWithResource(this, R.drawable.ic_stat_link), mainExecutor) { result ->
                 if (result == StatusBarManager.TILE_ADD_REQUEST_RESULT_TILE_ALREADY_ADDED) toast("The tile is already in Quick Settings")
             }
         } else {

@@ -66,7 +66,7 @@ class BridgeService : Service() {
             Intent(this, ClipboardSendActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
             PendingIntent.FLAG_IMMUTABLE)
         return NotificationCompat.Builder(this, CHANNEL_ONGOING)
-            .setSmallIcon(R.drawable.ic_bridge)
+            .setSmallIcon(R.drawable.ic_stat_link)
             .setContentTitle(statusText(s))
             .setContentText(if (s is BridgeState.Connected) "Copies on your Mac appear here automatically" else "Link to Mac")
             .setContentIntent(open)
@@ -106,7 +106,7 @@ class BridgeService : Service() {
 
         fun showProgress(context: Context, name: String, index: Int, total: Int, pct: Int) {
             val n = NotificationCompat.Builder(context, CHANNEL_ONGOING)
-                .setSmallIcon(R.drawable.ic_bridge)
+                .setSmallIcon(R.drawable.ic_stat_link)
                 .setContentTitle(if (total > 1) "Sending $index of $total to Mac" else "Sending to Mac")
                 .setContentText(name)
                 .setProgress(100, pct, false)
@@ -123,7 +123,7 @@ class BridgeService : Service() {
             val pi = PendingIntent.getActivity(context, 3, Intent(context, MainActivity::class.java)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK), PendingIntent.FLAG_IMMUTABLE)
             val n = NotificationCompat.Builder(context, CHANNEL_FILES)
-                .setSmallIcon(R.drawable.ic_bridge)
+                .setSmallIcon(R.drawable.ic_stat_link)
                 .setContentTitle("Tap to turn on automatic copy")
                 .setContentText("Then choose “Allow one-time access” so phone copies reach your Mac")
                 .setContentIntent(pi)
@@ -144,7 +144,7 @@ class BridgeService : Service() {
                 .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
             val pi = PendingIntent.getActivity(context, uri.hashCode(), view, PendingIntent.FLAG_IMMUTABLE)
             val n = NotificationCompat.Builder(context, CHANNEL_FILES)
-                .setSmallIcon(R.drawable.ic_bridge)
+                .setSmallIcon(R.drawable.ic_stat_link)
                 .setContentTitle("Received from Mac")
                 .setContentText("$name · Downloads/Link to Mac")
                 .setContentIntent(pi)
