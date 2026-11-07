@@ -282,7 +282,7 @@ private fun RecentCard(history: List<History.Entry>, actions: HomeActions) {
             Column(Modifier.padding(vertical = 8.dp)) {
                 Text("Recent", style = MaterialTheme.typography.bodyLarge, color = c.text,
                     modifier = Modifier.padding(start = 18.dp, top = 8.dp, bottom = 6.dp))
-                history.take(6).forEach { HistoryRow(it) { actions.openEntry(it) } }
+                history.take(5).forEach { HistoryRow(it) { actions.openEntry(it) } }
             }
         }
     }
