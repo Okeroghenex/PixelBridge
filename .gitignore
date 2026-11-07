@@ -12,3 +12,5 @@ android/local.properties
 android/.idea/
 android/.kotlin/
 *.iml
+mac/vendor-dl/
+mac/vendor/

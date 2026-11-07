@@ -44,5 +44,20 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 </plist>
 PLIST
 
+# Phone Screen + one-time phone setup use scrcpy (Apache-2.0), which ships with adb.
+# Pinned release, verified by SHA-256 before use.
+SCRCPY_VER=v5.0.1
+SCRCPY_SHA=33611e51977a8289e2e124b220f727895181ef2eb9060e0987a4dc2db9cf0d6b
+SCRCPY_DIR="vendor/scrcpy-$SCRCPY_VER"
+if [ ! -x "$SCRCPY_DIR/scrcpy" ]; then
+  mkdir -p vendor-dl "$SCRCPY_DIR"
+  TGZ="vendor-dl/scrcpy-macos-aarch64-$SCRCPY_VER.tar.gz"
+  [ -f "$TGZ" ] || curl -fL -o "$TGZ" "https://github.com/Genymobile/scrcpy/releases/download/$SCRCPY_VER/scrcpy-macos-aarch64-$SCRCPY_VER.tar.gz"
+  echo "$SCRCPY_SHA  $TGZ" | shasum -a 256 -c -
+  tar -xzf "$TGZ" -C "$SCRCPY_DIR" --strip-components=1
+fi
+mkdir -p "$APP/Contents/Resources/scrcpy"
+cp "$SCRCPY_DIR"/{scrcpy,adb,scrcpy-server,scrcpy.png,disconnected.png,LICENSE} "$APP/Contents/Resources/scrcpy/"
+
 codesign --force --deep --sign - "$APP"
 echo "Built $(pwd)/$APP"

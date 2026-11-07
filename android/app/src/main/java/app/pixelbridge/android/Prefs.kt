@@ -33,6 +33,19 @@ object Prefs {
         get() = sp.getBoolean("receiveClipboard", true)
         set(v) = sp.edit().putBoolean("receiveClipboard", v).apply()
 
+    /** Send phone copies to the Mac automatically (needs the one-time setup from the Mac). */
+    var autoSendClipboard: Boolean
+        get() = sp.getBoolean("autoSendClipboard", true)
+        set(v) = sp.edit().putBoolean("autoSendClipboard", v).apply()
+
+    var mirrorNotifications: Boolean
+        get() = sp.getBoolean("mirrorNotifications", true)
+        set(v) = sp.edit().putBoolean("mirrorNotifications", v).apply()
+
+    var callAlerts: Boolean
+        get() = sp.getBoolean("callAlerts", true)
+        set(v) = sp.edit().putBoolean("callAlerts", v).apply()
+
     fun pair(info: PairingInfo) {
         sp.edit()
             .putString("secret", Base64.encodeToString(info.secret, Base64.NO_WRAP))

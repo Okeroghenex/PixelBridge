@@ -34,5 +34,14 @@ Each message is `[u32 BE header length][UTF-8 JSON header][binary body]`. The he
 | `file_start` | `id`, `name`, `size` (−1 if unknown), `mime` | — |
 | `file_chunk` | `id` | ≤ 256 KiB |
 | `file_end` | `id` | — |
+| `notif` (phone→Mac) | `key`, `app`, `appName`, `title`, `text`, `time`, `canReply` | app icon PNG |
+| `notif_removed` (phone→Mac) | `key` | — |
+| `notif_reply` (Mac→phone) | `key` | UTF-8 reply text |
+| `notif_reply_result` (phone→Mac) | `key`, `ok` | — |
+| `notif_dismiss` (Mac→phone) | `key` | — |
+| `call` (phone→Mac) | `state` (`ringing` / `active` / `ended`), `key`, `name`, `detail`, `canDecline` | dialer icon PNG |
+| `call_action` (Mac→phone) | `key`, `action` (`decline`) | — |
+| `sms_threads_req` / `sms_threads` | reply may have `error` (`permission`) | JSON array of conversations |
+| `sms_messages_req` / `sms_messages` | `threadId` | JSON array of messages, oldest first |
 
 The phone sends `ping` every 20 seconds and the Mac answers with `pong`. A side that hears nothing for 60–70 seconds drops the connection, and the phone reconnects with backoff.

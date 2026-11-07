@@ -35,27 +35,7 @@ class ClipboardSendActivity : Activity() {
     }
 
     private fun sendClipboard() {
-        val clip = getSystemService(ClipboardManager::class.java).primaryClip
-        if (clip == null || clip.itemCount == 0) {
-            toast("Clipboard is empty"); return
-        }
-        val item = clip.getItemAt(0)
-        val uri = item.uri
-        val app = applicationContext
-        val done: (Boolean) -> Unit = { ok ->
-            Toast.makeText(app, if (ok) "Sent to Mac clipboard" else "Not connected to your Mac", Toast.LENGTH_SHORT).show()
-        }
-        if (uri != null) {
-            val mime = contentResolver.getType(uri) ?: ""
-            // Read now: access to a clipboard URI only lasts while we're in front.
-            val bytes = try { contentResolver.openInputStream(uri)?.use { it.readBytes() } } catch (e: Exception) { null }
-            if (mime.startsWith("image/") && bytes != null && bytes.size <= Proto.MAX_CLIP_IMAGE) {
-                Bridge.sendClipImage(bytes, mime, done); return
-            }
-        }
-        val text = item.coerceToText(this)?.toString().orEmpty()
-        if (text.isEmpty()) { toast("Nothing to send"); return }
-        Bridge.sendText(text, done)
+        if (!ClipReader.read(this, auto = false)) toast("Clipboard is empty")
     }
 
     private fun toast(s: String) = Toast.makeText(applicationContext, s, Toast.LENGTH_SHORT).show()

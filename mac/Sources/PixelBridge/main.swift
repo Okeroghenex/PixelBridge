@@ -11,6 +11,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var sendClipItem: NSMenuItem!
     private var sendFilesItem: NSMenuItem!
     private var pairingWindow: PairingWindowController?
+    private var notifItem: NSMenuItem!
+    private var ringItem: NSMenuItem!
+    private lazy var phoneEvents = PhoneEvents(server: server, canNotify: canNotify)
+    private let adb = AdbTool()
+    private lazy var setupModel = PhoneSetupModel(adb: adb)
+    private var setupWindow: PhoneSetupWindowController?
+    private var messagesWindow: MessagesWindowController?
 
     private var secret = SecretStore.load()
     private lazy var server = BridgeServer(secretProvider: { [weak self] in self?.secret ?? Data() })
@@ -36,6 +43,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         buildMenu()
 
+        _ = phoneEvents // registers notification categories (Reply / Decline)
+        DebugHooks.install(decline: { [weak self] k in self?.phoneEvents.decline(key: k) },
+                           openMessages: { [weak self] in self?.openMessages() },
+                           reply: { [weak self] k, t in self?.phoneEvents.sendReply(key: k, text: t) })
+        DebugHooks.extra = ["setup": { [weak self] in self?.showSetup() },
+                            "screen": { [weak self] in self?.showPhoneScreen() }]
         server.onStateChange = { [weak self] st in self?.update(state: st) }
         server.onMessage = { [weak self] m in self?.handle(m) }
         server.onFileReceived = { [weak self] url in self?.fileReceived(url) }
@@ -69,6 +82,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         sendFilesItem = menu.addItem(withTitle: "Send Files to Phone…", action: #selector(chooseFiles), keyEquivalent: "")
         autoSyncItem = menu.addItem(withTitle: "Sync Clipboard Automatically", action: #selector(toggleAutoSync), keyEquivalent: "")
         menu.addItem(.separator())
+        menu.addItem(withTitle: "Phone Screen", action: #selector(showPhoneScreen), keyEquivalent: "")
+        menu.addItem(withTitle: "Messages", action: #selector(openMessages), keyEquivalent: "")
+        notifItem = menu.addItem(withTitle: "Show Phone Notifications", action: #selector(toggleNotifications), keyEquivalent: "")
+        ringItem = menu.addItem(withTitle: "Ring for Phone Calls", action: #selector(toggleRing), keyEquivalent: "")
+        menu.addItem(withTitle: "Set Up Phone…", action: #selector(showSetup), keyEquivalent: "")
+        menu.addItem(.separator())
         menu.addItem(withTitle: "Pair Phone…", action: #selector(showPairing), keyEquivalent: "")
         menu.addItem(withTitle: "Reset Pairing Code…", action: #selector(resetPairing), keyEquivalent: "")
         menu.addItem(withTitle: "Open Downloads Folder", action: #selector(openDownloads), keyEquivalent: "")
@@ -81,6 +100,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     func menuWillOpen(_ menu: NSMenu) {
         autoSyncItem.state = autoSync ? .on : .off
+        notifItem.state = phoneEvents.mirrorNotifications ? .on : .off
+        ringItem.state = phoneEvents.ringForCalls ? .on : .off
         loginItem.state = SMAppService.mainApp.status == .enabled ? .on : .off
         sendClipItem.isEnabled = connected
         sendFilesItem.isEnabled = connected
@@ -110,6 +131,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     // MARK: Actions
 
     @objc private func toggleAutoSync() { autoSync.toggle() }
+    @objc private func toggleNotifications() { phoneEvents.mirrorNotifications.toggle() }
+    @objc private func toggleRing() { phoneEvents.ringForCalls.toggle() }
+
+    @objc private func showSetup() {
+        if setupWindow == nil { setupWindow = PhoneSetupWindowController(model: setupModel) }
+        NSApp.activate(ignoringOtherApps: true)
+        setupWindow?.showWindow(nil)
+        setupModel.check()
+    }
+
+    @objc private func openMessages() {
+        if messagesWindow == nil { messagesWindow = MessagesWindowController(model: phoneEvents.messages) }
+        NSApp.activate(ignoringOtherApps: true)
+        messagesWindow?.showWindow(nil)
+        phoneEvents.messages.refresh()
+    }
+
+    /// Opens the phone's screen if adb can reach it; otherwise walks through setup.
+    @objc private func showPhoneScreen() {
+        DispatchQueue.global().async { [weak self] in
+            guard let self else { return }
+            if let d = self.adb.phone() {
+                do { try self.adb.showScreen(d) } catch {
+                    DispatchQueue.main.async { self.notify("Couldn't open Phone Screen", error.localizedDescription) }
+                }
+            } else {
+                DispatchQueue.main.async { self.showSetup() }
+            }
+        }
+    }
 
     @objc private func sendClipboardNow() {
         guard let c = clipboard.currentContent() else { return }
@@ -200,7 +251,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             clipboard.setFromRemote(.image(pngData(m.body) ?? m.body))
             notify("Image copied from phone", "Paste it anywhere with ⌘V")
         default:
-            break
+            _ = phoneEvents.handle(m)
         }
     }
 
@@ -239,8 +290,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 extension AppDelegate: UNUserNotificationCenterDelegate {
     func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse,
                                 withCompletionHandler completionHandler: @escaping () -> Void) {
-        if let path = response.notification.request.content.userInfo["reveal"] as? String {
+        let info = response.notification.request.content.userInfo
+        if let path = info["reveal"] as? String {
             NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)])
+        } else {
+            _ = phoneEvents.respond(actionIdentifier: response.actionIdentifier, userInfo: info,
+                                    text: (response as? UNTextInputNotificationResponse)?.userText)
         }
         completionHandler()
     }

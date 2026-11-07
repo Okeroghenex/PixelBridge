@@ -273,6 +273,9 @@ object Bridge {
             out = output
             s.soTimeout = 60_000 // Mac answers our 20 s pings, so silence means the link is dead
             setState(BridgeState.Connected(macName))
+            if (Prefs.autoSendClipboard && AutoClipboard.isAvailable(app) && !AutoClipboard.isWatching) {
+                BridgeService.notifyAutoClipNeedsTap(app) // log access must be re-approved after a restart
+            }
             discovery?.stop()
             pinger = timer.scheduleWithFixedDelay({
                 sendExec.execute { try { write(Message.of("ping")) } catch (_: Exception) {} }
@@ -318,6 +321,7 @@ object Bridge {
             "clip_text" -> if (Prefs.receiveClipboard) {
                 val text = String(m.body, Charsets.UTF_8)
                 History.add(History.Kind.CLIP_IN, text)
+                AutoClipboard.lastSignature = "txt:${text.hashCode()}:${text.length}"
                 main.post {
                     app.getSystemService(ClipboardManager::class.java)
                         .setPrimaryClip(ClipData.newPlainText("From Mac", text))
@@ -341,7 +345,32 @@ object Bridge {
                     BridgeService.notifyFileReceived(app, f.name, f.uri, f.mime)
                 }
             }
+            "notif_reply" -> {
+                val ok = NotificationMirror.instance?.reply(m.header.optString("key"), String(m.body, Charsets.UTF_8)) ?: false
+                sendEvent(Message.of("notif_reply_result", mapOf("key" to m.header.optString("key"), "ok" to ok)))
+            }
+            "notif_dismiss" -> NotificationMirror.instance?.dismiss(m.header.optString("key"))
+            "call_action" -> if (m.header.optString("action") == "decline") {
+                NotificationMirror.instance?.decline(m.header.optString("key"))
+            }
+            "sms_threads_req" -> sendExec.execute {
+                val reply = if (!SmsStore.hasPermission(app)) Message.of("sms_threads", mapOf("error" to "permission"))
+                else Message.of("sms_threads", body = SmsStore.threads(app).toString().toByteArray())
+                try { write(reply) } catch (_: Exception) {}
+            }
+            "sms_messages_req" -> sendExec.execute {
+                val tid = m.header.optLong("threadId")
+                val reply = if (!SmsStore.hasPermission(app)) Message.of("sms_messages", mapOf("threadId" to tid, "error" to "permission"))
+                else Message.of("sms_messages", mapOf("threadId" to tid), SmsStore.messages(app, tid).toString().toByteArray())
+                try { write(reply) } catch (_: Exception) {}
+            }
         }
+    }
+
+    /** Fire-and-forget event (notifications, calls): dropped if the Mac isn't connected right now. */
+    fun sendEvent(m: Message) {
+        if (!::app.isInitialized || state !is BridgeState.Connected) return
+        sendExec.execute { try { write(m) } catch (_: Exception) {} }
     }
 
     private fun putImageOnClipboard(bytes: ByteArray) {

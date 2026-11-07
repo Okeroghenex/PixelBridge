@@ -24,7 +24,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
 import app.pixelbridge.android.ui.ConfirmPairDialog
+import app.pixelbridge.android.ui.AutoClipHelpDialog
 import app.pixelbridge.android.ui.EnterCodeDialog
+import app.pixelbridge.android.ui.FeatureState
 import app.pixelbridge.android.ui.HomeActions
 import app.pixelbridge.android.ui.HomeScreen
 import app.pixelbridge.android.ui.PairScreen
@@ -42,6 +44,8 @@ class MainActivity : ComponentActivity() {
     private var backgroundAllowed by mutableStateOf(true)
     private var showCodeDialog by mutableStateOf(false)
     private var pendingPair by mutableStateOf<PairingInfo?>(null)
+    private var features by mutableStateOf(FeatureState())
+    private var showAutoClipHelp by mutableStateOf(false)
 
     private val stateListener: (BridgeState) -> Unit = { s ->
         bridgeState = s
@@ -62,6 +66,9 @@ class MainActivity : ComponentActivity() {
     }
 
     private val notifPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) {}
+    private val smsPermission = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
+        refreshFeatures()
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
@@ -85,12 +92,24 @@ class MainActivity : ComponentActivity() {
             setReceiveClipboard = { Prefs.receiveClipboard = it; receiveClipboard = it },
             openEntry = ::openEntry,
             clearHistory = { History.clear() },
+            setAutoClipboard = { Prefs.autoSendClipboard = it; refreshFeatures() },
+            explainAutoClipboard = { showAutoClipHelp = true },
+            openNotificationAccess = {
+                try { startActivity(NotificationMirror.accessSettingsIntent(this)) }
+                catch (_: Exception) { startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) }
+            },
+            setMirrorNotifications = { Prefs.mirrorNotifications = it; refreshFeatures() },
+            setCallAlerts = { Prefs.callAlerts = it; refreshFeatures() },
+            requestSms = {
+                if (SmsStore.hasPermission(this)) toast("On your Mac: PixelBridge menu › Messages")
+                else smsPermission.launch(arrayOf(Manifest.permission.READ_SMS, Manifest.permission.READ_CONTACTS))
+            },
         )
 
         setContent {
             PixelBridgeTheme {
                 if (paired) {
-                    HomeScreen(bridgeState, macName, history, receiveClipboard, backgroundAllowed, actions)
+                    HomeScreen(bridgeState, macName, history, receiveClipboard, backgroundAllowed, features, actions)
                 } else {
                     PairScreen(bridgeState, onScan = ::scanQr, onEnterCode = { showCodeDialog = true })
                 }
@@ -100,6 +119,9 @@ class MainActivity : ComponentActivity() {
                         onDismiss = { showCodeDialog = false },
                         onPair = { code, host -> showCodeDialog = false; pairWithCode(code, host) },
                     )
+                }
+                if (showAutoClipHelp) {
+                    AutoClipHelpDialog(onDismiss = { showAutoClipHelp = false })
                 }
                 pendingPair?.let { info ->
                     ConfirmPairDialog(
@@ -133,12 +155,28 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         backgroundAllowed = getSystemService(PowerManager::class.java).isIgnoringBatteryOptimizations(packageName)
+        refreshFeatures()
+        if (paired && Prefs.autoSendClipboard && AutoClipboard.isAvailable(this)) {
+            AutoClipboard.start(this)
+            BridgeService.clearAutoClipPrompt(this)
+        }
     }
 
     override fun onStop() {
         Bridge.removeListener(stateListener)
         History.removeListener(historyListener)
         super.onStop()
+    }
+
+    private fun refreshFeatures() {
+        features = FeatureState(
+            autoClipAvailable = AutoClipboard.isAvailable(this),
+            autoClip = Prefs.autoSendClipboard,
+            notificationAccess = NotificationMirror.hasAccess(this),
+            mirrorNotifications = Prefs.mirrorNotifications,
+            callAlerts = Prefs.callAlerts,
+            smsGranted = SmsStore.hasPermission(this),
+        )
     }
 
     private fun toast(s: String) = Toast.makeText(this, s, Toast.LENGTH_SHORT).show()

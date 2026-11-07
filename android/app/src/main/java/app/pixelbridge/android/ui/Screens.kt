@@ -33,6 +33,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.BatteryChargingFull
 import androidx.compose.material.icons.rounded.ContentPaste
+import androidx.compose.material.icons.rounded.Sms
+import androidx.compose.material.icons.rounded.NotificationsActive
+import androidx.compose.material.icons.rounded.ContentCopy
+import androidx.compose.material.icons.rounded.Call
 import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.FolderOpen
 import androidx.compose.material.icons.rounded.Image
@@ -99,6 +103,22 @@ class HomeActions(
     val setReceiveClipboard: (Boolean) -> Unit,
     val openEntry: (History.Entry) -> Unit,
     val clearHistory: () -> Unit,
+    val setAutoClipboard: (Boolean) -> Unit,
+    val explainAutoClipboard: () -> Unit,
+    val openNotificationAccess: () -> Unit,
+    val setMirrorNotifications: (Boolean) -> Unit,
+    val setCallAlerts: (Boolean) -> Unit,
+    val requestSms: () -> Unit,
+)
+
+/** What the Mac-features card needs to know. */
+data class FeatureState(
+    val autoClipAvailable: Boolean = false,
+    val autoClip: Boolean = true,
+    val notificationAccess: Boolean = false,
+    val mirrorNotifications: Boolean = true,
+    val callAlerts: Boolean = true,
+    val smsGranted: Boolean = false,
 )
 
 @Composable
@@ -120,6 +140,7 @@ fun HomeScreen(
     history: List<History.Entry>,
     receiveClipboard: Boolean,
     backgroundAllowed: Boolean,
+    features: FeatureState,
     actions: HomeActions,
 ) {
     val connected = state is BridgeState.Connected
@@ -153,10 +174,15 @@ fun HomeScreen(
             Spacer(Modifier.height(18.dp))
             RecentCard(history, actions)
             Spacer(Modifier.height(18.dp))
+            SectionTitle("On your Mac")
+            FeaturesCard(features, actions)
+            Spacer(Modifier.height(18.dp))
+            SectionTitle("Settings")
             SettingsCard(receiveClipboard, backgroundAllowed, actions)
             Spacer(Modifier.height(20.dp))
             Text(
-                "Tip: after copying, tap Share in the clipboard bubble and choose Mac.",
+                if (features.autoClipAvailable && features.autoClip) "Copy anything here and it's ready to paste on your Mac."
+                else "Tip: after copying, tap Share in the clipboard bubble and choose Mac.",
                 style = Muted.copy(fontSize = MaterialTheme.typography.bodySmall.fontSize),
                 textAlign = TextAlign.Center,
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
@@ -415,6 +441,55 @@ private fun IconTile(icon: ImageVector, tile: Color, tint: Color, size: Int = 44
 }
 
 @Composable
+private fun SectionTitle(text: String) {
+    Text(text, style = MaterialTheme.typography.titleMedium, color = BridgeTheme.colors.text,
+        modifier = Modifier.padding(start = 6.dp, bottom = 10.dp))
+}
+
+@Composable
+private fun FeaturesCard(f: FeatureState, actions: HomeActions) {
+    val c = BridgeTheme.colors
+    Card {
+        Column(Modifier.padding(vertical = 6.dp)) {
+            if (f.autoClipAvailable) {
+                SettingRow(Icons.Rounded.ContentCopy, c.blueTile, c.blueIcon, "Copy here, paste on Mac",
+                    "Phone copies go to your Mac automatically", onClick = { actions.setAutoClipboard(!f.autoClip) }) {
+                    BridgeSwitch(f.autoClip, actions.setAutoClipboard)
+                }
+            } else {
+                SettingRow(Icons.Rounded.ContentCopy, c.blueTile, c.blueIcon, "Copy here, paste on Mac",
+                    "One-time setup from your Mac", onClick = actions.explainAutoClipboard, badge = "Set up")
+            }
+            Divider()
+            if (f.notificationAccess) {
+                SettingRow(Icons.Rounded.NotificationsActive, c.violetTile, c.violetIcon, "Notifications",
+                    "Show and reply from your Mac", onClick = { actions.setMirrorNotifications(!f.mirrorNotifications) }) {
+                    BridgeSwitch(f.mirrorNotifications, actions.setMirrorNotifications)
+                }
+                Divider()
+                SettingRow(Icons.Rounded.Call, c.greenTile, c.greenIcon, "Ring on Mac",
+                    "Your Mac rings when a call comes in", onClick = { actions.setCallAlerts(!f.callAlerts) }) {
+                    BridgeSwitch(f.callAlerts, actions.setCallAlerts)
+                }
+            } else {
+                SettingRow(Icons.Rounded.NotificationsActive, c.violetTile, c.violetIcon, "Notifications & calls",
+                    "Allow notification access", onClick = actions.openNotificationAccess, badge = "Allow")
+            }
+            Divider()
+            SettingRow(Icons.Rounded.Sms, c.amberTile, c.amberIcon, "Text message history",
+                if (f.smsGranted) "Open Messages from the Mac menu" else "Allow access to SMS",
+                onClick = actions.requestSms, badge = if (f.smsGranted) null else "Allow")
+        }
+    }
+}
+
+@Composable
+private fun BridgeSwitch(checked: Boolean, onChange: (Boolean) -> Unit) = Switch(
+    checked = checked, onCheckedChange = onChange,
+    colors = SwitchDefaults.colors(checkedTrackColor = MaterialTheme.colorScheme.primary),
+)
+
+@Composable
 private fun SettingsCard(receiveClipboard: Boolean, backgroundAllowed: Boolean, actions: HomeActions) {
     val c = BridgeTheme.colors
     Card {
@@ -449,7 +524,7 @@ private fun Divider() = HorizontalDivider(
 @Composable
 private fun SettingRow(
     icon: ImageVector, tile: Color, tint: Color, title: String, subtitle: String,
-    onClick: () -> Unit, trailing: (@Composable () -> Unit)? = null,
+    onClick: () -> Unit, badge: String? = null, trailing: (@Composable () -> Unit)? = null,
 ) {
     Row(
         Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 20.dp, vertical = 12.dp),
@@ -463,6 +538,12 @@ private fun SettingRow(
             Text(subtitle, style = Muted.copy(fontSize = MaterialTheme.typography.bodySmall.fontSize))
         }
         if (trailing != null) trailing()
+        else if (badge != null) Text(
+            badge, style = MaterialTheme.typography.labelLarge.copy(fontSize = MaterialTheme.typography.labelMedium.fontSize),
+            color = MaterialTheme.colorScheme.onPrimary,
+            modifier = Modifier.clip(CircleShape).background(MaterialTheme.colorScheme.primary)
+                .padding(horizontal = 14.dp, vertical = 7.dp),
+        )
         else Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, null, tint = BridgeTheme.colors.muted)
     }
 }
@@ -567,6 +648,23 @@ fun EnterCodeDialog(initialHost: String, onDismiss: () -> Unit, onPair: (code: S
         },
         confirmButton = { TextButton(onClick = { onPair(code, host) }, enabled = code.isNotBlank()) { Text("Pair") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        shape = RoundedCornerShape(28.dp),
+        containerColor = BridgeTheme.colors.card,
+    )
+}
+
+@Composable
+fun AutoClipHelpDialog(onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Copy here, paste on Mac") },
+        text = {
+            Text("Android only lets the app you're looking at read the clipboard, so this needs a one-time " +
+                "setup from your Mac:\n\n1. On this phone: Settings › System › Developer options › turn on Wireless debugging.\n" +
+                "2. On your Mac: PixelBridge menu › Set Up Phone…, and follow the steps.\n\n" +
+                "After that, anything you copy here is ready to paste on your Mac.")
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Got it") } },
         shape = RoundedCornerShape(28.dp),
         containerColor = BridgeTheme.colors.card,
     )

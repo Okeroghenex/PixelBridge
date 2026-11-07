@@ -32,6 +32,8 @@ final class BridgeServer: PeerDelegate {
         }
     }
 
+    var hasPhone: Bool { queue.sync { !phones.isEmpty } }
+
     var port: UInt16 { listener?.port?.rawValue ?? Bridge.defaultPort }
 
     init(secretProvider: @escaping () -> Data) {
@@ -214,6 +216,7 @@ final class BridgeServer: PeerDelegate {
 
     private func log(_ s: String) {
         NSLog("[PixelBridge] %@", s)
+        pbLog(s)
         DispatchQueue.main.async { self.onLog?(s) }
     }
 }

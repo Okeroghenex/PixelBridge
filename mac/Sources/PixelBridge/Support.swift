@@ -3,6 +3,21 @@ import BridgeCore
 import CoreImage
 import Darwin
 
+/// Appends a line to ~/Library/Logs/PixelBridge.log (kept under ~1 MB). Never logs message contents.
+func pbLog(_ s: String) {
+    let url = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Logs/PixelBridge.log")
+    let line = "\(ISO8601DateFormatter().string(from: Date())) \(s)\n"
+    if let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
+       (attrs[.size] as? NSNumber)?.intValue ?? 0 > 1_000_000 {
+        try? FileManager.default.removeItem(at: url)
+    }
+    if let h = try? FileHandle(forWritingTo: url) {
+        h.seekToEndOfFile(); h.write(Data(line.utf8)); try? h.close()
+    } else {
+        try? Data(line.utf8).write(to: url)
+    }
+}
+
 /// Stores the 16-byte pairing secret in ~/Library/Application Support/PixelBridge/pairing.key (mode 0600).
 enum SecretStore {
     static var fileURL: URL {

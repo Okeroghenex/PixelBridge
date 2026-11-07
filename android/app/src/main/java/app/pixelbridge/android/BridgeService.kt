@@ -116,6 +116,25 @@ class BridgeService : Service() {
             context.getSystemService(NotificationManager::class.java).notify(PROGRESS_ID, n)
         }
 
+        private const val AUTOCLIP_ID = 3
+
+        fun notifyAutoClipNeedsTap(context: Context) {
+            createChannels(context)
+            val pi = PendingIntent.getActivity(context, 3, Intent(context, MainActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK), PendingIntent.FLAG_IMMUTABLE)
+            val n = NotificationCompat.Builder(context, CHANNEL_FILES)
+                .setSmallIcon(R.drawable.ic_bridge)
+                .setContentTitle("Tap to turn on automatic copy")
+                .setContentText("Then choose “Allow one-time access” so phone copies reach your Mac")
+                .setContentIntent(pi)
+                .setAutoCancel(true)
+                .build()
+            context.getSystemService(NotificationManager::class.java).notify(AUTOCLIP_ID, n)
+        }
+
+        fun clearAutoClipPrompt(context: Context) =
+            context.getSystemService(NotificationManager::class.java).cancel(AUTOCLIP_ID)
+
         fun clearProgress(context: Context) =
             context.getSystemService(NotificationManager::class.java).cancel(PROGRESS_ID)
 
