@@ -46,9 +46,9 @@ object PbIcons {
     val Back = icon("back", "m12 19-7-7 7-7", "M19 12H5")
     val ChevronRight = icon("chevron", "m9 18 6-6-6-6")
     val Lock = icon("lock", rect(3f, 11f, 18f, 11f, 2f), "M7 11V7a5 5 0 0 1 10 0v4")
-    val Send = icon("send",
-        "M14.536 21.686a.5.5 0 0 0 .937-.024l6.5-19a.496.496 0 0 0-.635-.635l-19 6.5a.5.5 0 0 0-.024.937l7.93 3.18a2 2 0 0 1 1.112 1.11z",
-        "m21.854 2.147-10.94 10.939")
+    val Send = icon("send-horizontal",
+        "M3.714 3.048a.498.498 0 0 0-.683.627l2.843 7.627a2 2 0 0 1 0 1.396l-2.842 7.627a.498.498 0 0 0 .682.627l18-8.5a.5.5 0 0 0 0-.904z",
+        "M6 12h16")
     val Clipboard = icon("clipboard", rect(8f, 2f, 8f, 4f, 1f),
         "M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2")
     val Copy = icon("copy", rect(8f, 8f, 14f, 14f, 2f), "M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2")
