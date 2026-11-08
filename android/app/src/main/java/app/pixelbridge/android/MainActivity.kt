@@ -186,8 +186,7 @@ class MainActivity : ComponentActivity() {
         backgroundAllowed = getSystemService(PowerManager::class.java).isIgnoringBatteryOptimizations(packageName)
         refreshFeatures()
         if (paired && Prefs.autoSendClipboard && AutoClipboard.isAvailable(this)) {
-            AutoClipboard.start(this)
-            BridgeService.clearAutoClipPrompt(this)
+            AutoClipboard.start(this) // clears the reminder once Android grants log access
         }
     }
 

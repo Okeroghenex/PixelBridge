@@ -15,6 +15,7 @@ import android.provider.OpenableColumns
 import android.provider.Settings
 import android.util.Base64
 import android.util.Log
+import android.widget.Toast
 import androidx.core.content.FileProvider
 import org.json.JSONObject
 import java.io.BufferedInputStream
@@ -303,7 +304,7 @@ object Bridge {
             out = output
             s.soTimeout = 60_000 // Mac answers our 20 s pings, so silence means the link is dead
             setState(BridgeState.Connected(macName))
-            if (Prefs.autoSendClipboard && AutoClipboard.isAvailable(app) && !AutoClipboard.isWatching) {
+            if (Prefs.autoSendClipboard && AutoClipboard.isAvailable(app) && AutoClipboard.needsTap) {
                 BridgeService.notifyAutoClipNeedsTap(app) // log access must be re-approved after a restart
             }
             discovery?.stop()
@@ -352,10 +353,7 @@ object Bridge {
                 val text = String(m.body, Charsets.UTF_8)
                 History.add(History.Kind.CLIP_IN, text)
                 AutoClipboard.lastSignature = "txt:${text.hashCode()}:${text.length}"
-                main.post {
-                    app.getSystemService(ClipboardManager::class.java)
-                        .setPrimaryClip(ClipData.newPlainText("From Mac", text))
-                }
+                main.post { setClip(ClipData.newPlainText("From Mac", text)) }
             }
             "clip_image" -> if (Prefs.receiveClipboard) {
                 putImageOnClipboard(m.body)
@@ -419,9 +417,16 @@ object Bridge {
         val file = File(dir, "mac-clip-${System.currentTimeMillis()}.png")
         file.writeBytes(bytes)
         val uri = FileProvider.getUriForFile(app, "${app.packageName}.files", file)
-        main.post {
-            app.getSystemService(ClipboardManager::class.java)
-                .setPrimaryClip(ClipData.newUri(app.contentResolver, "Image from Mac", uri))
+        main.post { setClip(ClipData.newUri(app.contentResolver, "Image from Mac", uri)) }
+    }
+
+    /** Android's clipboard rejects (and crashes the app on) clips over about 1 MB, so catch that. */
+    private fun setClip(clip: ClipData) {
+        try {
+            app.getSystemService(ClipboardManager::class.java).setPrimaryClip(clip)
+        } catch (e: RuntimeException) {
+            Log.w(TAG, "setPrimaryClip", e)
+            Toast.makeText(app, "Mac copy too large for the phone clipboard", Toast.LENGTH_LONG).show()
         }
     }
 

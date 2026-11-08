@@ -41,16 +41,29 @@ object AutoClipboard {
 
     fun isAvailable(ctx: Context) = hasLogAccess(ctx) && canOverlay(ctx)
 
-    val isWatching: Boolean get() = watcher?.isAlive == true
+    /** null until Android answers "Allow access to device logs?", then whether we got the system logs. */
+    @Volatile var canSeeLogs: Boolean? = null
+        private set
+    private val retry = Object()
+    @Volatile private var retryRequested = false
+
+    /** True when phone copies are not reaching the Mac and opening the app (to re-approve) would fix it. */
+    val needsTap: Boolean get() = watcher?.isAlive != true || canSeeLogs == false
 
     /**
-     * Must be called while our UI is in front: Android 13+ asks "Allow access to device logs?" the first
-     * time we read logs in each app process, and can only show that question to a visible app.
+     * Android 13+ asks "Allow access to device logs?" for each app process, and only while the app is on
+     * screen; in the background (e.g. after Android restarts the app) the request is silently declined and
+     * logcat then shows only our own lines. So call this from the visible UI; it starts the watcher, or asks
+     * again if the last answer was no.
      */
     @Synchronized
     fun start(context: Context) {
         val ctx = context.applicationContext
-        if (!hasLogAccess(ctx) || watcher?.isAlive == true) return
+        if (!hasLogAccess(ctx)) return
+        if (watcher?.isAlive == true) {
+            if (canSeeLogs == false) synchronized(retry) { retryRequested = true; retry.notifyAll() }
+            return
+        }
         // Being registered as a listener is what makes ClipboardService log the refusal for us.
         main.post {
             ctx.getSystemService(ClipboardManager::class.java).addPrimaryClipChangedListener {
@@ -61,10 +74,41 @@ object AutoClipboard {
         watcher = Thread({ watchLog(ctx) }, "pixelbridge-logwatch").apply { isDaemon = true; start() }
     }
 
+    /** Reads the log buffer once. Blocks while Android's log-access question is on screen. */
+    private fun probeSystemLogs(): Boolean {
+        val me = android.os.Process.myPid()
+        val p = ProcessBuilder("logcat", "-d", "-t", "300", "-v", "brief").redirectErrorStream(true).start()
+        val killer = Runnable { p.destroy() }
+        main.postDelayed(killer, 120_000) // nobody answered the question
+        try {
+            val pid = Regex("""^[VDIWEF]/.*?\(\s*(\d+)\)""")
+            return p.inputStream.bufferedReader().useLines { lines ->
+                lines.any { l -> pid.find(l)?.groupValues?.get(1)?.toIntOrNull()?.let { it != me } == true }
+            }
+        } finally {
+            main.removeCallbacks(killer)
+            p.destroy()
+        }
+    }
+
     private fun watchLog(ctx: Context) {
         val pkg = ctx.packageName
         while (true) {
             try {
+                val ok = probeSystemLogs()
+                canSeeLogs = ok
+                if (!ok) {
+                    Log.i(TAG, "log access declined; waiting for the app to be opened")
+                    if (Prefs.autoSendClipboard && Bridge.state is BridgeState.Connected) {
+                        BridgeService.notifyAutoClipNeedsTap(ctx)
+                    }
+                    synchronized(retry) {
+                        while (!retryRequested) retry.wait()
+                        retryRequested = false
+                    }
+                    continue
+                }
+                BridgeService.clearAutoClipPrompt(ctx)
                 // Only lines written from now on: replaying an old line would re-send a stale clip.
                 val since = String.format(java.util.Locale.US, "%.3f", System.currentTimeMillis() / 1000.0)
                 val p = ProcessBuilder("logcat", "-v", "epoch", "-T", since, "ClipboardService:E", "*:S")
