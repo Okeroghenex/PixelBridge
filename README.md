@@ -21,6 +21,8 @@ Shared clipboard and file transfer between a Mac and an Android phone (built for
 
 ## Download
 
+**New here? Follow the step-by-step [installation guide](INSTALL.md).**
+
 Get the latest version from **[Releases](https://github.com/Okeroghenex/PixelBridge/releases/latest)**:
 
 | File | For |
@@ -33,7 +35,7 @@ Each file has a `.sha256` checksum next to it.
 
 **Installing on Android**
 - Open the APK on your phone and allow your browser or file manager to install apps when asked.
-- **"App blocked to protect your device"** (full version only): in some countries, Android blocks downloaded apps that read SMS or notifications. Install **Lite** instead, or install the full version from a computer with `adb install LinkToMac-<version>.apk`.
+- **"App blocked to protect your device"** (full version only): Google Play Protect blocks downloaded apps that read SMS or notifications. Turn Play Protect off for a moment while you install, then back on (see the [installation guide](INSTALL.md#if-google-play-protect-blocks-the-install)), install **Lite** instead, or install from a computer with `adb install LinkToMac-<version>.apk`.
 - After installing the full version, if notification or SMS access is greyed out: **Settings › Apps › Link to Mac › ⋮ › Allow restricted settings**.
 - Both versions use the same signing key, so you can switch between them without losing your pairing.
 
