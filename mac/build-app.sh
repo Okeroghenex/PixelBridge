@@ -37,7 +37,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>NSLocalNetworkUsageDescription</key>
   <string>Link to Mac talks to your Android phone over your local Wi-Fi network.</string>
   <key>NSBonjourServices</key>
-  <array><string>_pixelbridge._tcp</string></array>
+  <array><string>_pixelbridge._tcp</string><string>_adb-tls-pairing._tcp</string><string>_adb-tls-connect._tcp</string></array>
   <key>NSServices</key>
   <array>
     <dict>

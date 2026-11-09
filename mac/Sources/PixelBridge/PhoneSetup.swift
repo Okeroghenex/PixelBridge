@@ -46,6 +46,7 @@ final class AdbTool {
 
     /// Connects to phones advertising Wireless debugging that this Mac has paired with before.
     func connectDiscovered() {
+        for addr in BonjourLookup.find(type: "_adb-tls-connect._tcp.", timeout: 2) { run(["connect", addr], timeout: 8) }
         for line in run(["mdns", "services"], timeout: 5).out.split(separator: "\n") where line.contains("_adb-tls-connect") {
             if let addr = line.split(whereSeparator: { $0 == "\t" || $0 == " " }).last(where: { $0.contains(":") }) {
                 run(["connect", String(addr)], timeout: 8)
@@ -62,6 +63,20 @@ final class AdbTool {
             ?? list.first
     }
 
+    /// After the phone scans our QR code it advertises `_adb-tls-pairing._tcp` under the name we chose.
+    func pairingAddress(named name: String) -> String? {
+        if let addr = BonjourLookup.find(type: "_adb-tls-pairing._tcp.", timeout: 1.5, match: { $0 == name }).first {
+            return addr
+        }
+        for line in run(["mdns", "services"], timeout: 5).out.split(separator: "\n")
+        where line.contains("_adb-tls-pairing") && line.contains(name) {
+            if let addr = line.split(whereSeparator: { $0 == "\t" || $0 == " " }).last(where: { $0.contains(":") }) {
+                return String(addr)
+            }
+        }
+        return nil
+    }
+
     func pair(address: String, code: String) -> (ok: Bool, message: String) {
         let r = run(["pair", address, code], timeout: 25)
         let ok = r.out.localizedCaseInsensitiveContains("successfully paired")
@@ -73,12 +88,17 @@ final class AdbTool {
         let b = run(["-s", d.serial, "shell", "appops", "set", Self.package, "SYSTEM_ALERT_WINDOW", "allow"])
         // Bring the app to the front so Android can ask "Allow access to device logs?".
         run(["-s", d.serial, "shell", "am", "start", "-n", "\(Self.package)/.MainActivity"])
-        return a.code == 0 && b.code == 0
+        return a.code == 0 && b.code == 0 && autoClipboardEnabled(d)
     }
 
+    /// Both grants are needed: READ_LOGS to notice copies and "display over other apps" to read them.
+    /// Reinstalling the phone app clears them, so check both rather than assume.
     func autoClipboardEnabled(_ d: Device) -> Bool {
-        run(["-s", d.serial, "shell", "dumpsys", "package", Self.package], timeout: 10).out
+        let logs = run(["-s", d.serial, "shell", "dumpsys", "package", Self.package], timeout: 10).out
             .contains("android.permission.READ_LOGS: granted=true")
+        let overlay = run(["-s", d.serial, "shell", "appops", "get", Self.package, "SYSTEM_ALERT_WINDOW"], timeout: 10).out
+            .contains("SYSTEM_ALERT_WINDOW: allow")
+        return logs && overlay
     }
 
     private var mirror: Process?
@@ -101,6 +121,58 @@ final class AdbTool {
     }
 }
 
+/// Finds Wireless-debugging services with macOS's own Bonjour. adb's built-in discovery can go stale
+/// (a long-running adb server stops seeing new phones), so we look them up ourselves and hand adb an address.
+final class BonjourLookup: NSObject, NetServiceBrowserDelegate, NetServiceDelegate {
+    private let browser = NetServiceBrowser()
+    private let match: (String) -> Bool
+    private var resolving: [NetService] = []
+    private var results: [String] = []
+    private let found = DispatchSemaphore(value: 0)
+
+    private init(match: @escaping (String) -> Bool) { self.match = match }
+
+    /// "ip:port" of each matching service. Call from a background queue (it waits for the main run loop).
+    static func find(type: String, timeout: TimeInterval, match: @escaping (String) -> Bool = { _ in true }) -> [String] {
+        precondition(!Thread.isMainThread)
+        let l = BonjourLookup(match: match)
+        DispatchQueue.main.async {
+            l.browser.delegate = l
+            l.browser.searchForServices(ofType: type, inDomain: "local.")
+        }
+        _ = l.found.wait(timeout: .now() + timeout)
+        return DispatchQueue.main.sync {
+            l.browser.stop()
+            l.resolving.forEach { $0.stop() }
+            return l.results
+        }
+    }
+
+    func netServiceBrowser(_ b: NetServiceBrowser, didFind service: NetService, moreComing: Bool) {
+        guard match(service.name) else { return }
+        resolving.append(service)
+        service.delegate = self
+        service.resolve(withTimeout: 5)
+    }
+
+    func netServiceDidResolveAddress(_ sender: NetService) {
+        for data in sender.addresses ?? [] {
+            let ip: String? = data.withUnsafeBytes { raw in
+                guard let sa = raw.baseAddress?.assumingMemoryBound(to: sockaddr.self),
+                      sa.pointee.sa_family == sa_family_t(AF_INET) else { return nil }
+                var sin = raw.load(as: sockaddr_in.self)
+                var buf = [CChar](repeating: 0, count: Int(INET_ADDRSTRLEN))
+                inet_ntop(AF_INET, &sin.sin_addr, &buf, socklen_t(INET_ADDRSTRLEN))
+                return String(cString: buf)
+            }
+            if let ip, !results.contains("\(ip):\(sender.port)") {
+                results.append("\(ip):\(sender.port)")
+                found.signal()
+            }
+        }
+    }
+}
+
 // MARK: - Setup window
 
 final class PhoneSetupModel: ObservableObject {
@@ -110,6 +182,13 @@ final class PhoneSetupModel: ObservableObject {
     @Published var message: String?
     @Published var address = ""
     @Published var code = ""
+    enum PairMethod: Hashable { case qr, code }
+    @Published var method: PairMethod = .qr {
+        didSet { if method == .qr { startQR() } else { stopQR() } }
+    }
+    @Published var qrImage: NSImage?
+    @Published var qrStatus = ""
+    private var qrSession = 0
     let adb: AdbTool
     private let q = DispatchQueue(label: "pixelbridge.adb")
 
@@ -125,6 +204,7 @@ final class PhoneSetupModel: ObservableObject {
                 self.checking = false
                 self.device = d?.model
                 self.autoClipOn = on
+                if d == nil, self.method == .qr { self.startQR() } else if d != nil { self.stopQR() }
             }
         }
     }
@@ -143,6 +223,64 @@ final class PhoneSetupModel: ObservableObject {
             Thread.sleep(forTimeInterval: 2)
             DispatchQueue.main.async { self.check() }
         }
+    }
+
+    // MARK: QR code pairing (Wireless debugging › Pair device with QR code)
+
+    /// Shows a fresh QR code and waits up to 3 minutes for the phone to scan it.
+    func startQR() {
+        guard adb.available, device == nil else { return }
+        if qrImage != nil, qrStatus.hasPrefix("Waiting") { return } // already waiting
+        qrSession += 1
+        let session = qrSession
+        let alphabet = Array("abcdefghijkmnpqrstuvwxyz23456789")
+        let name = "linktomac-" + String((0..<6).map { _ in alphabet.randomElement()! })
+        let password = String((0..<10).map { _ in alphabet.randomElement()! })
+        qrImage = QRCode.image(for: "WIFI:T:ADB;S:\(name);P:\(password);;", size: 190)
+        qrStatus = "Waiting for your phone to scan the code…"
+        q.async {
+            let deadline = Date().addingTimeInterval(180)
+            while Date() < deadline {
+                guard self.qrSession == session else { return }
+                if let addr = self.adb.pairingAddress(named: name) {
+                    DispatchQueue.main.async { if self.qrSession == session { self.qrStatus = "Pairing…" } }
+                    let r = self.adb.pair(address: addr, code: password)
+                    guard self.qrSession == session else { return }
+                    if r.ok {
+                        DispatchQueue.main.async { self.qrStatus = "Paired. Connecting…" }
+                        // The phone advertises its connect service a moment after pairing.
+                        for _ in 0..<15 {
+                            self.adb.connectDiscovered()
+                            if !self.adb.devices().isEmpty { break }
+                            Thread.sleep(forTimeInterval: 1)
+                        }
+                        DispatchQueue.main.async {
+                            self.qrImage = nil
+                            self.qrStatus = ""
+                            self.check()
+                        }
+                    } else {
+                        DispatchQueue.main.async {
+                            self.qrImage = nil
+                            self.qrStatus = "Pairing failed: \(r.message)"
+                        }
+                    }
+                    return
+                }
+                Thread.sleep(forTimeInterval: 1)
+            }
+            DispatchQueue.main.async {
+                guard self.qrSession == session else { return }
+                self.qrImage = nil
+                self.qrStatus = "The code expired."
+            }
+        }
+    }
+
+    func stopQR() {
+        qrSession += 1
+        qrImage = nil
+        qrStatus = ""
     }
 
     func enableAutoClipboard() {
@@ -173,7 +311,7 @@ final class PhoneSetupModel: ObservableObject {
 
 final class PhoneSetupWindowController: NSWindowController {
     convenience init(model: PhoneSetupModel) {
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 520, height: 480),
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 520, height: 600),
                               styleMask: [.titled, .closable], backing: .buffered, defer: false)
         window.title = "Set Up Phone"
         window.isReleasedWhenClosed = false
@@ -204,22 +342,14 @@ struct PhoneSetupView: View {
             }
 
             if model.device == nil {
+                Picker("", selection: $model.method) {
+                    Text("Pair with QR code").tag(PhoneSetupModel.PairMethod.qr)
+                    Text("Pair with pairing code").tag(PhoneSetupModel.PairMethod.code)
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
                 GroupBox {
-                    VStack(alignment: .leading, spacing: 10) {
-                        Step(n: 1, text: "On your phone open **Settings › System › Developer options** and turn on **Wireless debugging**. (No Developer options? Settings › About phone › tap **Build number** 7 times.)")
-                        Step(n: 2, text: "Tap **Wireless debugging › Pair device with pairing code**.")
-                        Step(n: 3, text: "Type the **IP address & Port** and **Wi-Fi pairing code** it shows:")
-                        HStack {
-                            TextField("192.168.1.23:37099", text: $model.address).textFieldStyle(.roundedBorder)
-                            TextField("123456", text: $model.code).textFieldStyle(.roundedBorder).frame(width: 90)
-                            Button("Pair", action: model.pair).keyboardShortcut(.defaultAction)
-                                .disabled(model.address.isEmpty || model.code.isEmpty)
-                        }
-                        .padding(.leading, 30)
-                        Text("Or plug the phone in with a USB cable and tap Allow on it.")
-                            .font(.callout).foregroundStyle(.secondary).padding(.leading, 30)
-                    }
-                    .padding(8)
+                    if model.method == .qr { qrSteps } else { codeSteps }
                 }
             } else {
                 GroupBox {
@@ -249,8 +379,59 @@ struct PhoneSetupView: View {
                 .font(.footnote).foregroundStyle(.tertiary)
         }
         .padding(24)
-        .frame(width: 520, height: 480)
+        .frame(width: 520, height: 600)
         .onAppear(perform: model.check)
+    }
+
+    private var enableDebugging: some View {
+        Step(n: 1, text: "On your phone open **Settings › System › Developer options** and turn on **Wireless debugging**. (No Developer options? Settings › About phone › tap **Build number** 7 times.)")
+    }
+
+    private var qrSteps: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            enableDebugging
+            Step(n: 2, text: "Tap **Wireless debugging › Pair device with QR code** and scan this code:")
+            HStack(alignment: .center, spacing: 16) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 10).fill(Color.white)
+                    if let img = model.qrImage {
+                        Image(nsImage: img).interpolation(.none).resizable().frame(width: 190, height: 190)
+                    } else {
+                        Button("Show New Code", action: model.startQR)
+                    }
+                }
+                .frame(width: 206, height: 206)
+                VStack(alignment: .leading, spacing: 8) {
+                    if model.qrStatus.hasPrefix("Waiting") || model.qrStatus.hasSuffix("…") {
+                        ProgressView().controlSize(.small)
+                    }
+                    Text(model.qrStatus).font(.callout).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text("Your phone and Mac must be on the same Wi-Fi.")
+                        .font(.callout).foregroundStyle(.tertiary).fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .padding(.leading, 30)
+        }
+        .padding(8)
+    }
+
+    private var codeSteps: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            enableDebugging
+            Step(n: 2, text: "Tap **Wireless debugging › Pair device with pairing code**.")
+            Step(n: 3, text: "Type the **IP address & Port** and **Wi-Fi pairing code** it shows:")
+            HStack {
+                TextField("192.168.1.23:37099", text: $model.address).textFieldStyle(.roundedBorder)
+                TextField("123456", text: $model.code).textFieldStyle(.roundedBorder).frame(width: 90)
+                Button("Pair", action: model.pair).keyboardShortcut(.defaultAction)
+                    .disabled(model.address.isEmpty || model.code.isEmpty)
+            }
+            .padding(.leading, 30)
+            Text("Or plug the phone in with a USB cable and tap Allow on it.")
+                .font(.callout).foregroundStyle(.secondary).padding(.leading, 30)
+        }
+        .padding(8)
     }
 }
 

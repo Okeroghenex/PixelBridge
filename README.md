@@ -89,8 +89,9 @@ On the phone, open Link to Mac and look at the **On your Mac** card:
 - **Text message history → Allow**: allow SMS and Contacts access.
 
 On the Mac, choose menu bar → **Set Up Phone…**:
-1. On the phone, go to **Settings → System → Developer options → Wireless debugging**, turn it on, then tap **Pair device with pairing code**.
-2. Type the **IP address & Port** and the **pairing code** into the Mac window, then click **Pair**.
+1. On the phone, go to **Settings → System → Developer options → Wireless debugging** and turn it on.
+2. Tap **Pair device with QR code** and scan the code in the Mac window. The Mac pairs by itself.
+   Or choose **Pair with pairing code** in the Mac window, tap **Pair device with pairing code** on the phone, and type the **IP address & Port** and the **pairing code** it shows.
 3. Click **Turn On** next to *Copy on phone, paste on Mac*. On the phone, tap **Allow one-time access**.
 4. Click **Open** next to *Phone Screen*.
 
