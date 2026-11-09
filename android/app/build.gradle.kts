@@ -14,8 +14,8 @@ android {
         applicationId = "app.pixelbridge.android"
         minSdk = 29
         targetSdk = 36
-        versionCode = 8
-        versionName = "1.5.2"
+        versionCode = 9
+        versionName = "1.5.3"
     }
 
     // Release key lives outside the repo (~/.linktomac/signing.properties). Without it, release builds

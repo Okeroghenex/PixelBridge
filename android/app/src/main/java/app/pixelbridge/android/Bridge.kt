@@ -99,13 +99,13 @@ object Bridge {
 
     fun sendText(text: String, onResult: ((Boolean) -> Unit)? = null) =
         enqueue(onResult) {
-            write(Message.of("clip_text", body = text.toByteArray(Charsets.UTF_8)))
+            sendClip(Message.of("clip_text", body = text.toByteArray(Charsets.UTF_8)))
             History.add(History.Kind.CLIP_OUT, text)
         }
 
     fun sendClipImage(bytes: ByteArray, mime: String, onResult: ((Boolean) -> Unit)? = null) =
         enqueue(onResult) {
-            write(Message.of("clip_image", mapOf("mime" to mime), bytes))
+            sendClip(Message.of("clip_image", mapOf("mime" to mime), bytes))
             History.add(History.Kind.IMAGE_OUT, "Image")
         }
 
@@ -177,6 +177,46 @@ object Bridge {
             }
             onResult?.let { cb -> main.post { cb(ok) } }
         }
+    }
+
+    // Clips must not vanish into a connection that died without us noticing (e.g. the Mac app restarted):
+    // after a clip we send a ping, and the Mac answers pings in order, so its pong proves the clip arrived.
+    // No pong within 4 s → reconnect and send the clip again.
+    @Volatile private var pendingClip: Message? = null
+    @Volatile private var pendingClipAt = 0L
+    @Volatile private var pendingClipPing = 0
+    private val pingsSent = java.util.concurrent.atomic.AtomicInteger()
+    private val pongsReceived = java.util.concurrent.atomic.AtomicInteger()
+
+    private fun sendPing(): Int {
+        val n = pingsSent.incrementAndGet()
+        write(Message.of("ping"))
+        return n
+    }
+
+    private fun sendClip(m: Message) {
+        pendingClip = m
+        pendingClipAt = System.currentTimeMillis()
+        write(m)
+        val ping = sendPing()
+        pendingClipPing = ping
+        timer.schedule({
+            if (pendingClip === m && pongsReceived.get() < ping) {
+                Log.i(TAG, "Mac didn't confirm the clip; reconnecting")
+                reconnect()
+            }
+        }, 4, TimeUnit.SECONDS)
+    }
+
+    private fun onPong() {
+        if (pongsReceived.incrementAndGet() >= pendingClipPing) pendingClip = null
+    }
+
+    /** After (re)connecting: deliver a clip the last connection lost, if it's still recent. */
+    private fun resendPendingClip() {
+        val m = pendingClip ?: return
+        if (System.currentTimeMillis() - pendingClipAt > 120_000) { pendingClip = null; return }
+        sendExec.execute { try { if (pendingClip === m) sendClip(m) } catch (_: Exception) {} }
     }
 
     private fun write(m: Message) {
@@ -303,13 +343,17 @@ object Bridge {
             crypto = c
             out = output
             s.soTimeout = 60_000 // Mac answers our 20 s pings, so silence means the link is dead
+            pingsSent.set(0)
+            pongsReceived.set(0)
+            pendingClipPing = 0
             setState(BridgeState.Connected(macName))
+            resendPendingClip()
             if (Prefs.autoSendClipboard && AutoClipboard.isAvailable(app) && AutoClipboard.needsTap) {
                 BridgeService.notifyAutoClipNeedsTap(app) // log access must be re-approved after a restart
             }
             discovery?.stop()
             pinger = timer.scheduleWithFixedDelay({
-                sendExec.execute { try { write(Message.of("ping")) } catch (_: Exception) {} }
+                sendExec.execute { try { sendPing() } catch (_: Exception) {} }
             }, 20, 20, TimeUnit.SECONDS)
 
             while (running) {
@@ -349,6 +393,7 @@ object Bridge {
 
     private fun handle(m: Message) {
         when (m.type) {
+            "pong" -> onPong()
             "clip_text" -> if (Prefs.receiveClipboard) {
                 val text = String(m.body, Charsets.UTF_8)
                 History.add(History.Kind.CLIP_IN, text)

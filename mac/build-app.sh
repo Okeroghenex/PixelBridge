@@ -4,7 +4,7 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 VERSION="${VERSION:-1.5}"
-BUILD="${BUILD:-6}"
+BUILD="${BUILD:-7}"
 SCRATCH="${SCRATCH:-.build}"
 
 # 1. The app itself, for both CPU types, merged with lipo.
