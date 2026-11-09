@@ -127,6 +127,37 @@ MIT (see `LICENSE`). Bundled third-party components are listed in `THIRD_PARTY_N
 
 The logo files live in `branding/`. The Android launcher icon is an adaptive icon built from them, so each launcher crops it to its own shape: a circle on Pixel, a squircle on Samsung, a square on others. `mac/tools/make-icons.swift` turns them into the Mac app icon and menu bar icon whenever the app is built.
 
+## Privacy
+
+**Link to Mac has no servers, no accounts, no analytics and no ads.** Your data travels only between your own phone and your own Mac, over your Wi-Fi, encrypted. Nothing is sent to the developer, to GitHub or to any cloud service, and the developer has no way to see it.
+
+**What the phone shares with your paired Mac, and only once you turn it on**
+
+| Permission | What reaches the Mac | Stored on the Mac? |
+|---|---|---|
+| Clipboard | What you copy | Only on the Mac clipboard, like any copy |
+| Files you share | The file | Yes, in `~/Downloads` |
+| Notifications and calls | Each notification's app, title and text, and who's calling | No. Shown as Mac notifications, which macOS keeps in Notification Center |
+| Text message history | Your SMS conversations, with contact names | No. Fetched from the phone each time you open **Messages** |
+| Contacts | Only names, to label calls and texts | No. The contact list itself never leaves the phone |
+| Mac wallpaper | (Mac → phone) A small copy of your desktop picture | Kept on the phone to draw the laptop on the home screen |
+
+**What each device keeps**
+- **Mac:** the pairing key (`~/Library/Application Support/PixelBridge/pairing.key`, readable only by your Mac account) and a log of connections in `~/Library/Logs/PixelBridge.log`. The log never contains message, notification or clipboard contents.
+- **Phone:** the Macs you've paired, the **Recent** list (your last 30 items, shortened to 200 characters each) and the Mac wallpaper. To empty Recent, tap **⋮ › Settings › Clear recent activity**.
+
+**Who can see your data**
+- **Anyone who can use your paired Mac** can see what the phone sends to it, such as texts in **Messages** and notifications. Lock your Mac when you step away, and in **System Settings › Notifications** you can hide notification previews on the lock screen.
+- **The pairing QR code works like a password.** Only scan it from your own Mac, and don't share a photo of it. If someone else may have seen it, choose **Reset Pairing Code…** in the Mac menu to disconnect every phone at once, then pair again.
+- **Other people on the same Wi-Fi** can't read anything. Without your pairing key the traffic is unreadable, and a fake Mac or phone is rejected.
+
+**The extra permissions automatic copy uses**
+*Copy on phone, paste on Mac* needs two Android permissions that are granted from your Mac over Wireless debugging: reading system logs and drawing over other apps. Link to Mac reads only the line Android writes when you copy something, then briefly opens an invisible window to read the clipboard. Nothing else from the logs is read, stored or sent. You can turn Wireless debugging off once setup is done; automatic copy keeps working.
+
+**Only install from this repository's [Releases](https://github.com/Okeroghenex/PixelBridge/releases).** A modified copy from somewhere else would get the same access to your phone. Every release is signed with the same key, so Android refuses an "update" that wasn't, and each file has a `.sha256` checksum.
+
+**To remove everything:** uninstall the app on the phone, delete **Link to Mac** from Applications, and delete `~/Library/Application Support/PixelBridge`. On the phone, also forget the Mac under **Developer options › Wireless debugging › Paired devices**.
+
 ## Security
 
 - Pairing creates a random 128-bit secret on the Mac (`~/Library/Application Support/PixelBridge/pairing.key`, mode 600).
